@@ -1,0 +1,52 @@
+# Example GitLab CI config for a Katalon Studio project using the
+# Allure-Katalon Bridge. Copy this into your project's repo as
+# .gitlab-ci.yml, fill in the TODO, and it's ready to run.
+#
+# Uses Katalon's own official Docker image (katalonstudio/katalon), which
+# ships Chrome and Firefox but not Edge - use -browserType="Chrome" here
+# rather than "Edge Chromium". If you specifically need Edge/Windows
+# parity with an Azure Pipelines or GitHub Actions setup, GitLab.com also
+# offers a free-tier Windows hosted runner (tag: saas-windows-medium-amd64)
+# you can target instead by downloading katalonc.exe the same way the other
+# two platforms' Marketplace tasks do internally.
+#
+# The bridge itself needs no configuration here: executor.json auto-detects
+# GitLab CI from the standard GITLAB_CI / CI_PIPELINE_IID variables GitLab
+# sets automatically, so the Allure report header links back to this exact
+# pipeline with no setup required.
+#
+# The Docker image doesn't include the Allure commandline, so this installs
+# it directly from GitHub releases rather than assuming npm is available in
+# every base image.
+
+image: katalonstudio/katalon:11.3.0
+
+stages:
+  - test
+
+variables:
+  ALLURE_VERSION: "2.45.0"
+
+.katalon_base:
+  stage: test
+  before_script:
+    - curl -sL "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz" -o /tmp/allure.tgz
+    - tar xf /tmp/allure.tgz -C /opt
+    - export PATH="/opt/allure-${ALLURE_VERSION}/bin:$PATH"
+  artifacts:
+    when: always
+    paths:
+      - Reports/
+      - allure-report/
+
+run_tests:
+  extends: .katalon_base
+  script:
+    # TODO: replace <YourCollection> with your actual Test Suite Collection
+    # path, or swap -testSuiteCollectionPath for
+    # -testSuitePath="Test Suites/<YourSuite>" to run a single suite.
+    #
+    # Add KATALON_API_KEY under Settings > CI/CD > Variables in your
+    # project (mask it) - your Katalon Runtime Engine API key from Katalon
+    # Store > Profile > API Key.
+    - katalonc.sh -projectPath="$CI_PROJECT_DIR" -apiKey="$KATALON_API_KEY" -browserType="Chrome" -retry=0 -statusDelay=20 -executionProfile="default" --config -webui.autoUpdateDrivers=true -testSuiteCollectionPath="Test Suites/<YourCollection>" -reportFolder="$CI_PROJECT_DIR/Reports"

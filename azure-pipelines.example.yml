@@ -1,0 +1,92 @@
+# Example Azure Pipelines config for a Katalon Studio project using the
+# Allure-Katalon Bridge. Copy this into your project's repo as
+# azure-pipelines.yml, fill in the TODOs, and it's ready to run.
+#
+# Uses the "Execute Katalon Studio Tests" Marketplace task (katalonTask),
+# which handles downloading and running the correct Katalon Runtime Engine
+# version for you - install it from the Azure DevOps Marketplace first if
+# your organization doesn't already have it.
+#
+# The bridge itself needs no configuration here: executor.json auto-detects
+# Azure Pipelines from the standard SYSTEM_TEAMFOUNDATIONCOLLECTIONURI /
+# BUILD_BUILDID variables ADO sets automatically, so the Allure report
+# header links back to this exact build with no setup required.
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  # Create a variable group named "Katalon" under Pipelines > Library, with
+  # a secret variable named KatalonApiKey holding your Katalon Runtime
+  # Engine API key (Katalon Store > Profile > API Key). Marking it secret
+  # keeps it masked in every log line.
+  - group: Katalon
+
+steps:
+  - checkout: self
+
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '18.x'
+    displayName: 'Install Node.js'
+
+  - script: npm install -g allure-commandline
+    displayName: 'Install Allure commandline'
+
+  - task: PowerShell@2
+    displayName: 'Clean bin/ before Katalon run'
+    inputs:
+      targetType: 'inline'
+      script: |
+        # katalonTask resolves the project by scanning for a *.prj file, and
+        # will pick up a stray copy left under bin/ by an earlier step in
+        # this same job if one exists, running against the wrong project
+        # entirely. Clearing bin/ before every katalonTask step avoids that -
+        # repeat this step before each one if your pipeline runs more than
+        # one Test Suite or Test Suite Collection.
+        Remove-Item -Path "$(Build.SourcesDirectory)\bin" -Recurse -Force -ErrorAction SilentlyContinue
+
+  - task: katalonTask@1
+    displayName: 'Run Katalon tests'
+    condition: succeededOrFailed()
+    inputs:
+      version: '11.3.0'
+      # TODO: replace <YourCollection> with your actual Test Suite
+      # Collection path, or swap -testSuiteCollectionPath for
+      # -testSuitePath="Test Suites/<YourSuite>" to run a single suite.
+      #
+      # --config -webui.autoUpdateDrivers=true keeps the WebUI driver
+      # (Edge/Chrome) in sync with whatever browser version is actually on
+      # the agent, instead of Katalon's bundled driver, which can lag
+      # behind a hosted agent's auto-updating browser and fail with
+      # SessionNotCreatedException.
+      executeArgs: '-retry=0 -testSuiteCollectionPath="Test Suites/<YourCollection>" -executionProfile="default" -browserType="Edge Chromium" -apiKey=$(KatalonApiKey) --config -webui.autoUpdateDrivers=true -reportFolder="$(Build.SourcesDirectory)\Reports"'
+
+  - task: PublishTestResults@2
+    displayName: 'Publish test results'
+    condition: succeededOrFailed()
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: 'Reports/**/*.xml'
+      searchFolder: '$(Build.SourcesDirectory)'
+      mergeTestResults: true
+      failTaskOnFailedTests: true
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Katalon report folder'
+    condition: succeededOrFailed()
+    inputs:
+      PathtoPublish: '$(Build.SourcesDirectory)\Reports'
+      ArtifactName: 'katalon-reports'
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Allure report'
+    condition: succeededOrFailed()
+    inputs:
+      PathtoPublish: '$(Build.SourcesDirectory)\allure-report'
+      ArtifactName: 'allure-report'
