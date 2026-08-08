@@ -1,0 +1,65 @@
+# Example GitHub Actions workflow for a Katalon Studio project using the
+# Allure-Katalon Bridge. Copy this into your project's repo as
+# .github/workflows/katalon-ci.yml, fill in the TODO, and it's ready to run.
+#
+# Uses the official katalon-studio/katalon-studio-github-action, the
+# GitHub Actions equivalent of Azure Pipelines' katalonTask - it downloads
+# and runs the requested Katalon Runtime Engine version for you.
+#
+# The bridge itself needs no configuration here: executor.json auto-detects
+# GitHub Actions from the standard GITHUB_ACTIONS / GITHUB_RUN_ID variables
+# GitHub sets automatically, so the Allure report header links back to this
+# exact run with no setup required.
+
+name: Katalon CI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Allure commandline
+        run: npm install -g allure-commandline
+
+      - name: Run Katalon tests
+        uses: katalon-studio/katalon-studio-github-action@v4.0
+        with:
+          version: '11.3.0'
+          projectPath: '${{ github.workspace }}'
+          # TODO: replace <YourCollection> with your actual Test Suite
+          # Collection path, or swap -testSuiteCollectionPath for
+          # -testSuitePath="Test Suites/<YourSuite>" to run a single suite.
+          #
+          # --config -webui.autoUpdateDrivers=true keeps the WebUI driver
+          # (Edge/Chrome) in sync with whatever browser version is actually
+          # on the runner, instead of Katalon's bundled driver, which can
+          # lag behind and fail with SessionNotCreatedException.
+          #
+          # Add KATALON_API_KEY under Settings > Secrets and variables >
+          # Actions in your repo - your Katalon Runtime Engine API key from
+          # Katalon Store > Profile > API Key.
+          args: '-noSplash -retry=0 -testSuiteCollectionPath="Test Suites/<YourCollection>" -executionProfile="default" -browserType="Edge Chromium" -apiKey=${{ secrets.KATALON_API_KEY }} --config -webui.autoUpdateDrivers=true -reportFolder="${{ github.workspace }}\Reports"'
+
+      - name: Publish Katalon report folder
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: katalon-reports
+          path: Reports
+
+      - name: Publish Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report

@@ -1,0 +1,22 @@
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/IDE
+.vscode/
+.idea/
+*.iml
+
+# Temp/backup files
+*.bak
+*.tmp
+*~
+
+# Local scratch space if you test the installer against a throwaway
+# Katalon project inside this repo
+/scratch/
+/test-project/
+
+# Internal development history - not part of the public-facing product
+/CHANGELOG.md
