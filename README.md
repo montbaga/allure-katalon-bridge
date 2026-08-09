@@ -4,6 +4,9 @@ Turn any Katalon Studio project into an Allure-reporting project by
 double-clicking one file - no plugin installation, no OSGi packaging, no
 command line, no changes to existing Test Cases or Test Suites.
 
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for how this is actually built
+under the hood.
+
 ## Install / Uninstall
 
 Open the folder matching your OS - it contains only what you need, nothing
