@@ -88,7 +88,7 @@ package solves all of them:
 
 - Katalon Studio (tested on 11.4.0 locally and 11.3.0 in CI; uses only long-stable public APIs)
 - Windows or macOS to use the double-click installer as-is; Linux works via `Linux/install.sh` in a terminal (PowerShell/bash ship with the OS either way - nothing extra to install for the installer itself)
-- [Allure commandline](https://allurereport.org/docs/install/) on PATH (`npm install -g allure-commandline`) - used to auto-generate the HTML report after each suite and to view it. If it's missing, the bridge logs one warning and otherwise behaves normally (raw `allure-results/` JSON still gets written either way)
+- [Allure commandline](https://allurereport.org/docs/install/) installed (`npm install -g allure-commandline`) - used to auto-generate the HTML report after each suite and to view it. The bridge auto-detects it (PATH, common install locations, or your login shell on macOS/Linux - see Troubleshooting below); if it still can't find it, set `allure.commandline.path` or the bridge logs one warning and otherwise behaves normally (raw `allure-results/` JSON still gets written either way)
 
 Verified end-to-end on Azure Pipelines, GitHub Actions, and GitLab CI - see [CI setup](#ci-setup) below for a ready-to-copy config for each.
 
@@ -145,7 +145,7 @@ Allure result per test case - status, timing, a failure screenshot
 labels, and a stable history ID so retries and repeat runs show up as
 history/trend in the report. A self-contained `allure-report/<Name>_
 <timestamp>.html` is generated automatically too, at the end of the run
-(requires the Allure commandline on PATH - see Requirements), with the
+(requires the Allure commandline to be installed and found - see Requirements), with the
 Trend/History graphs carried forward from the previous run.
 
 `<Name>` is whatever you actually ran:
@@ -196,6 +196,7 @@ override any key per environment with `ALLURE_<KEY_IN_UPPER_SNAKE_CASE>`
 | `allure.auto.generate.report` | `true` | Auto-run `allure generate` at the end of every suite. Set `false` if your CI already does this itself |
 | `allure.report.dir` | `allure-report` | Base folder for generated reports; each run writes its own `<Name>_<timestamp>` here |
 | `allure.report.single.file` | `true` | One self-contained `.html` per run (double-click to open, no server). Set `false` for a `<Name>_<timestamp>/` folder instead - only worth it for very large suites |
+| `allure.commandline.path` | *(auto-detected)* | Absolute path to the `allure` executable, only needed if auto-detection doesn't find it - see Troubleshooting below |
 
 ## CI setup
 
@@ -289,9 +290,35 @@ Reports show up on the pipeline job's page, in the **Job artifacts** panel.
 
 ## Troubleshooting
 
-See the "Troubleshooting" and "Design notes / limitations" sections
-carried over into every installed project's docs. For anything not
-covered there, reach out - see Support below.
+**HTML report folder is empty, or a `[Allure] Could not auto-generate the
+HTML report...` warning shows up in the console.** The bridge couldn't
+find the `allure` commandline. It tries, in order: `allure.commandline.path`
+(if you set it), a few common install locations, then - on macOS/Linux -
+asking your own login shell where `allure` resolves to, then finally a
+bare `allure` on whatever `PATH` this process already inherited. This
+mostly shows up running the Katalon Studio IDE as a desktop app on
+macOS/Linux: a GUI-launched app (double-clicked, from Dock/Finder) does
+not source the shell profile scripts (`.zshrc`, `.bash_profile`, etc)
+that tools like volta/nvm/homebrew rely on to reach `PATH`, so it can be
+installed and working fine from a Terminal yet still be invisible here.
+CI pipelines aren't affected by this, since they already run Katalon from
+inside a shell step with the right `PATH`. If none of the automatic
+strategies find it, set `allure.commandline.path` (or
+`ALLURE_COMMANDLINE_PATH`) to its absolute path - the warning message
+names exactly which command it tried.
+
+**Test Suite Collection report seems to be missing one member suite's
+results.** Every suite in a Collection shares one `allure-results/`
+folder, and the report is only (re)generated once every member has
+finished - see "Using it" above. If a member suite never reaches its own
+`AfterTestSuite` (aborted, killed, or crashed mid-run), its results won't
+be in the folder yet when the report is built. Check the console for
+`[Allure]` lines from every expected suite; if all of them show up but
+results still seem to be missing, open an issue on this repo with the
+console log.
+
+For anything else, open an issue on this repo, or reach out - see Support
+below.
 
 ## Support
 
