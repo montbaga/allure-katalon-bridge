@@ -31,7 +31,11 @@ class AllureConfig {
     }
 
     private static String read(String key, String defaultValue) {
-        String envKey = 'ALLURE_' + key.toUpperCase().replace('.', '_')
+        // Every key here already starts with "allure." (e.g.
+        // "allure.results.dir"), so upper-casing and swapping dots for
+        // underscores alone already produces "ALLURE_RESULTS_DIR" - no
+        // extra "ALLURE_" prefix needed on top of that.
+        String envKey = key.toUpperCase().replace('.', '_')
         String envValue = System.getenv(envKey)
         if (envValue != null && !envValue.trim().isEmpty()) {
             return envValue.trim()
@@ -96,6 +100,18 @@ class AllureConfig {
 
     static File getReportDir() {
         return resolvePath(read('allure.report.dir', DEFAULT_REPORT_DIR_NAME))
+    }
+
+    /**
+     * Absolute path to the 'allure' commandline executable to use for
+     * report generation. Only needed when the bridge can't find it on its
+     * own - see AllureReportBridge's command resolution (checked before
+     * falling back to common install locations, then the current user's
+     * login shell PATH, then a bare "allure" relying on whatever PATH this
+     * process already inherited). Overridable via ALLURE_COMMANDLINE_PATH.
+     */
+    static String getAllureCommandlinePath() {
+        return read('allure.commandline.path', '')?.trim()
     }
 
     /**
