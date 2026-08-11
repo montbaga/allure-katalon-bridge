@@ -91,7 +91,27 @@ class AllureReportBridge {
                 // withRunLock()'s notes below.)
                 File thisRunDir = currentRunDir()
                 Map marker = readRunMarker(resultsDir)
-                boolean continuingRun = thisRunDir != null && thisRunDir.absolutePath == (marker.runDir as String)
+                String previousRunDir = marker.runDir as String
+                boolean continuingRun
+                if (thisRunDir != null) {
+                    continuingRun = thisRunDir.absolutePath == previousRunDir
+                } else {
+                    // This suite's own run directory couldn't be resolved -
+                    // can happen if Katalon Studio IDE lays out Reports/
+                    // differently than Katalon Runtime Engine's console
+                    // mode does for a Test Suite Collection (see
+                    // currentRunDir()). Treat an existing marker as still
+                    // being continued rather than risk clearing an
+                    // in-progress Collection's already-written results out
+                    // from under it just because this one signal was
+                    // inconclusive: losing an earlier sub-suite's results
+                    // because we couldn't confirm a new run has started is
+                    // worse than occasionally skipping a clear that would
+                    // have been harmless anyway. A marker with genuinely
+                    // nothing left to continue it gets cleaned up as soon
+                    // as a later suite's run directory does resolve.
+                    continuingRun = previousRunDir != null && !previousRunDir.trim().isEmpty()
+                }
                 if (!continuingRun) {
                     if (AllureConfig.cleanResultsBeforeRun()) {
                         clearPreviousResults(resultsDir)
@@ -102,7 +122,12 @@ class AllureReportBridge {
                     // previous, unrelated run - see shouldGenerateReportNow().
                     new File(resultsDir, '.allure-collection-progress.txt').delete()
                 }
-                writeRunMarker(resultsDir, thisRunDir?.absolutePath ?: '', marker.reportPath as String)
+                // Only overwrite the recorded run dir when this suite
+                // actually resolved one - an unresolved thisRunDir must
+                // not blank out a still-valid marker a later suite in
+                // this same run may depend on.
+                String runDirToRecord = thisRunDir != null ? thisRunDir.absolutePath : previousRunDir
+                writeRunMarker(resultsDir, runDirToRecord ?: '', marker.reportPath as String)
             }
 
             Allure.setLifecycle(new AllureLifecycle(new FileSystemResultsWriter(resultsDir.toPath())))
@@ -189,12 +214,14 @@ class AllureReportBridge {
         }
         File reportBaseDir = AllureConfig.getReportDir()
         File stagingDir = new File(reportBaseDir, ".staging-${System.nanoTime()}")
+        String allureCommand = resolveAllureCommand()
         try {
             reportBaseDir.mkdirs()
             boolean singleFile = AllureConfig.singleFileReport()
             carryHistoryForward(reportBaseDir, resultsDir, singleFile)
 
-            if (!runAllureGenerate(resultsDir, stagingDir, singleFile)) {
+            logger.logInfo('[Allure] Generating HTML report - this can take a few seconds, there is no separate progress indicator for it.')
+            if (!runAllureGenerate(allureCommand, resultsDir, stagingDir, singleFile)) {
                 return
             }
 
@@ -249,7 +276,8 @@ class AllureReportBridge {
                 logger.logInfo("[Allure] HTML report ready: ${finalTarget.absolutePath}")
             }
         } catch (Throwable t) {
-            logger.logWarning("[Allure] Could not auto-generate the HTML report - is 'allure' on PATH? (${t.getMessage()})")
+            logger.logWarning("[Allure] Could not auto-generate the HTML report using '${allureCommand}' - install the Allure commandline (npm install -g allure-commandline), " +
+                "point allure.commandline.path (Include/config/allure/allure.properties) or ALLURE_COMMANDLINE_PATH at its absolute path, or set allure.auto.generate.report=false. (${t.getMessage()})")
         } finally {
             if (stagingDir.exists()) {
                 FileUtils.deleteQuietly(stagingDir)
@@ -257,8 +285,8 @@ class AllureReportBridge {
         }
     }
 
-    private static boolean runAllureGenerate(File resultsDir, File outputDir, boolean singleFile) {
-        List<String> baseCommand = ['allure', 'generate', resultsDir.absolutePath, '--clean', '-o', outputDir.absolutePath]
+    private static boolean runAllureGenerate(String allureCommand, File resultsDir, File outputDir, boolean singleFile) {
+        List<String> baseCommand = [allureCommand, 'generate', resultsDir.absolutePath, '--clean', '-o', outputDir.absolutePath]
         if (singleFile) {
             baseCommand << '--single-file'
         }
@@ -275,11 +303,145 @@ class AllureReportBridge {
         }
         if (process.exitValue() != 0) {
             String output = process.inputStream.getText('UTF-8')
-            logger.logWarning('[Allure] "allure generate" failed - install the Allure commandline (npm install -g allure-commandline) or set allure.auto.generate.report=false. ' +
+            logger.logWarning("[Allure] \"allure generate\" (using '${allureCommand}') failed - install the Allure commandline (npm install -g allure-commandline) or set allure.auto.generate.report=false. " +
                 "Output: ${output.take(500)}")
             return false
         }
         return true
+    }
+
+    /** Cached for the lifetime of this process - resolution below can shell out, and does not need to repeat per suite. */
+    private static volatile String resolvedAllureCommand = null
+
+    /**
+     * Finds the 'allure' commandline executable to run, since a bare
+     * "allure" (relying on whatever PATH this JVM process already
+     * inherited) does not work everywhere it needs to. On CI, it already
+     * does: the pipeline installs Allure and runs Katalon from inside a
+     * shell step, so the JVM inherits that shell's PATH correctly - this
+     * whole resolution is a no-op there (last strategy below matches
+     * today's behaviour exactly). The gap is the Katalon Studio IDE
+     * launched as a desktop app (double-clicked, from Dock/Finder/Start
+     * Menu) on macOS or Linux: that process inherits the OS's bare
+     * session-default PATH, not the richer one a login shell builds by
+     * sourcing .zshrc/.bash_profile/etc - so a tool installed through
+     * volta/nvm/sdkman/homebrew and only ever added to PATH by a shell
+     * profile script is invisible to it, even though `which allure` finds
+     * it fine from a terminal. Windows does not have this split - an
+     * installer-set User/System PATH entry is visible to every
+     * subsequently launched process, GUI or shell alike - so this mostly
+     * matters on macOS/Linux.
+     *
+     * findAllureCommand() below tries an explicit config override first
+     * (for whenever the automatic strategies still guess wrong), then a
+     * short list of common install locations, then - the actual general
+     * fix for this whole class of problem, not just one install path -
+     * asking the current user's own login shell what it resolves
+     * "allure" to, before falling back to a bare "allure" unchanged.
+     */
+    private static String resolveAllureCommand() {
+        if (resolvedAllureCommand != null) {
+            return resolvedAllureCommand
+        }
+        synchronized (INTRA_JVM_LOCK) {
+            if (resolvedAllureCommand == null) {
+                resolvedAllureCommand = findAllureCommand()
+            }
+        }
+        return resolvedAllureCommand
+    }
+
+    private static String findAllureCommand() {
+        boolean isWindows = System.getProperty('os.name', '').toLowerCase().contains('win')
+
+        String configured = safeCall { AllureConfig.getAllureCommandlinePath() }
+        if (configured) {
+            File f = new File(configured)
+            if (isExecutableFile(f)) {
+                logger.logInfo("[Allure] Using configured allure.commandline.path: ${f.absolutePath}")
+                return f.absolutePath
+            }
+            logger.logWarning("[Allure] allure.commandline.path is set to '${configured}' but that is not an existing, executable file - ignoring it and trying to auto-detect instead.")
+        }
+
+        for (String candidate : commonAllureInstallLocations(isWindows)) {
+            File f = new File(candidate)
+            if (isExecutableFile(f)) {
+                logger.logInfo("[Allure] Found allure at a common install location: ${f.absolutePath}")
+                return f.absolutePath
+            }
+        }
+
+        if (!isWindows) {
+            String viaShell = resolveAllureViaLoginShell()
+            if (viaShell) {
+                logger.logInfo("[Allure] Found allure via the login shell's PATH: ${viaShell}")
+                return viaShell
+            }
+        }
+
+        return 'allure'
+    }
+
+    private static boolean isExecutableFile(File f) {
+        try {
+            return f.isFile() && f.canExecute()
+        } catch (Throwable ignored) {
+            return false
+        }
+    }
+
+    private static List<String> commonAllureInstallLocations(boolean isWindows) {
+        String home = System.getProperty('user.home', '')
+        if (isWindows) {
+            return [
+                "${home}\\scoop\\shims\\allure.bat",
+                "${System.getenv('ProgramData') ?: 'C:\\ProgramData'}\\chocolatey\\bin\\allure.exe",
+                "${home}\\.volta\\bin\\allure.exe",
+            ]
+        }
+        return [
+            "${home}/.volta/bin/allure",
+            '/opt/homebrew/bin/allure',
+            '/usr/local/bin/allure',
+            "${home}/.npm-global/bin/allure",
+            '/snap/bin/allure',
+            '/usr/bin/allure',
+        ]
+    }
+
+    /**
+     * Asks the user's own login shell where "allure" resolves to - the
+     * same answer `which allure`/`command -v allure` gives in a real
+     * Terminal, since a login shell (`-l`) sources the same profile
+     * scripts (.zshrc, .bash_profile, etc) a Terminal window does. This is
+     * what actually fixes the class of problem, not just one specific
+     * tool's default install path: whatever the user's own shell
+     * environment adds to PATH, this sees too.
+     */
+    private static String resolveAllureViaLoginShell() {
+        try {
+            String shell = System.getenv('SHELL') ?: '/bin/sh'
+            Process process = new ProcessBuilder(shell, '-lc', 'command -v allure')
+                .redirectErrorStream(true).start()
+            boolean finished = process.waitFor(10, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                return null
+            }
+            if (process.exitValue() != 0) {
+                return null
+            }
+            String output = process.inputStream.getText('UTF-8')
+            String firstLine = output.readLines().find { it?.trim() }
+            if (!firstLine) {
+                return null
+            }
+            File f = new File(firstLine.trim())
+            return isExecutableFile(f) ? f.absolutePath : null
+        } catch (Throwable ignored) {
+            return null
+        }
     }
 
     private static String sanitizeForFilename(String name) {
@@ -498,11 +660,11 @@ class AllureReportBridge {
     /**
      * 0-based position of THIS suite occurrence among every occurrence of
      * the SAME underlying suite (matched by plan.jsonl's entityId, e.g.
-     * "Test Suites/API Test Suite") within the current run's plan - used to
-     * make startTestCase()'s historyId unique per occurrence. Always 0 when
-     * a suite appears only once, by far the common case - this only
-     * differs when the very same suite is deliberately used more than once
-     * inside one Test Suite Collection.
+     * "Test Suites/API Test Suite") within the current run's plan - used by
+     * suiteOccurrenceDiscriminator() to make startTestCase()'s historyId
+     * unique per occurrence. Always 0 when a suite appears only once, by
+     * far the common case - this only differs when the very same suite is
+     * deliberately used more than once inside one Test Suite Collection.
      *
      * Katalon's own per-run disambiguation suffix on the report folder
      * (e.g. "API Test Suite_45ff52a0") can't be used for this directly: it
@@ -511,30 +673,39 @@ class AllureReportBridge {
      * children array reflects the collection's *configured* suite order
      * instead, which stays the same run to run.
      *
-     * Falls back to 0 (not null) on any failure, since 0 is exactly what
-     * every single-occurrence suite already gets - this can only ever fail
-     * to disambiguate a genuine duplicate, never misidentify a suite that
-     * only appears once.
+     * Returns null - not 0 - whenever this genuinely can't be determined
+     * (no plan.jsonl, unreadable, or this suite isn't findable in it), so
+     * suiteOccurrenceDiscriminator() can tell "confidently the only
+     * occurrence" apart from "unknown" and fall back to something else
+     * instead of silently colliding two real occurrences onto the same
+     * "0" (Katalon Runtime Engine's console mode always writes plan.jsonl;
+     * the Katalon Studio IDE may not, for a running Test Suite
+     * Collection). Still returns a confident 0 (not null) for a plain,
+     * non-collection run whenever plan.jsonl itself is readable - that
+     * case is unambiguous.
      */
-    private static int suiteOccurrenceOrdinal() {
+    private static Integer suiteOccurrenceOrdinalFromPlan() {
         try {
             File runDir = currentRunDir()
             String myKey = runDir != null ? suiteInstanceKey(runDir) : null
             if (runDir == null || myKey == null) {
-                return 0
+                return null
             }
             File planFile = new File(runDir, 'plan.jsonl')
             if (!planFile.isFile()) {
-                return 0
+                return null
             }
             String firstLine
             planFile.withReader('UTF-8') { reader -> firstLine = reader.readLine() }
             if (!firstLine || !firstLine.trim()) {
-                return 0
+                return null
             }
             JsonObject root = JsonParser.parseString(firstLine).getAsJsonObject()
             JsonObject execution = root.has('execution') ? root.getAsJsonObject('execution') : null
-            if (execution == null || execution.get('kind')?.getAsString() != 'TEST_SUITE_COLLECTION') {
+            String kind = execution?.get('kind')?.getAsString()
+            if (kind != 'TEST_SUITE_COLLECTION') {
+                // A plain suite/test case run - unambiguously occurrence
+                // 0, whether or not plan.jsonl even models this concept.
                 return 0
             }
             List<JsonObject> suiteChildren = []
@@ -547,13 +718,56 @@ class AllureReportBridge {
             JsonObject mine = suiteChildren.find { topLevelExecutionDirSegment(it) == myKey }
             String myEntityId = mine?.get('entityId')?.getAsString()
             if (mine == null || !myEntityId) {
-                return 0
+                return null
             }
             List<JsonObject> siblings = suiteChildren.findAll { it.get('entityId')?.getAsString() == myEntityId }
             int ordinal = siblings.findIndexOf { topLevelExecutionDirSegment(it) == myKey }
-            return ordinal >= 0 ? ordinal : 0
+            return ordinal >= 0 ? ordinal : null
         } catch (Throwable ignored) {
-            return 0
+            return null
+        }
+    }
+
+    /**
+     * The string startTestCase() bakes into historyId to keep two
+     * occurrences of the very same suite within one run - e.g. the same
+     * Test Suite Collection member run once per browser - from colliding
+     * onto one Allure historyId. Allure treats matching historyIds as
+     * retries of one logical test and collapses every earlier one out of
+     * the default report view, which is indistinguishable, from the
+     * report reader's side, from that browser's results being missing
+     * entirely.
+     *
+     * Prefers suiteOccurrenceOrdinalFromPlan()'s plan.jsonl-based
+     * position when available, kept byte-for-byte identical to before
+     * this method existed so nobody's existing Allure trend history
+     * changes. When that's unavailable, falls back to Katalon's own
+     * per-occurrence report folder name (suiteInstanceKey()) instead of
+     * blindly assuming "0" - but only once this run is independently
+     * confirmed (via resolveCollectionName(), which needs no plan.jsonl)
+     * to actually be a Test Suite Collection, so a plain standalone
+     * suite keeps returning "0" whether or not plan.jsonl exists, and
+     * only the population actually at risk of two occurrences colliding
+     * is affected.
+     */
+    private static String suiteOccurrenceDiscriminator(String ownSuiteName) {
+        Integer ordinal = suiteOccurrenceOrdinalFromPlan()
+        if (ordinal != null) {
+            return ordinal.toString()
+        }
+        try {
+            File runDir = currentRunDir()
+            if (runDir == null) {
+                return '0'
+            }
+            String collectionName = resolveCollectionName(runDir, ownSuiteName)
+            if (!collectionName) {
+                return '0'
+            }
+            String key = suiteInstanceKey(runDir)
+            return key ?: '0'
+        } catch (Throwable ignored) {
+            return '0'
         }
     }
 
@@ -660,6 +874,15 @@ class AllureReportBridge {
      * fallback whenever this comes back empty, rather than replacing this
      * check outright - whichever Katalon version does write .metadata
      * keeps using the more precise signal.
+     *
+     * When the collection itself lives inside a folder in the Test Suites
+     * tree (e.g. "Test Suites/Regression/MyCollection" rather than
+     * directly under "Test Suites/"), Katalon mirrors that folder path
+     * here too - ".metadata/Regression/MyCollection/", not flatly
+     * ".metadata/MyCollection/": the entry one level under .metadata is
+     * the intermediate folder name ("Regression"), not the collection's
+     * own name, with the collection's own (empty) directory one level
+     * deeper still.
      */
     private static String resolveCollectionName(File targetRunDir, String ownSuiteName) {
         if (targetRunDir == null) {
@@ -669,17 +892,37 @@ class AllureReportBridge {
         return viaMetadata ?: resolveCollectionNameFromSiblingFolder(targetRunDir, ownSuiteName)
     }
 
+    /**
+     * Descends from .metadata/ through single-subfolder chains until
+     * reaching a directory with no subfolders of its own (a leaf) - that
+     * leaf's name is the collection's own name. For a collection that
+     * isn't nested inside any Test Suites folder, .metadata/<CollectionName>
+     * is already a leaf, so this returns immediately with the same answer
+     * as always. For a nested collection, this walks past each
+     * intermediate folder-path segment (e.g. .metadata/Regression/
+     * MyCollection/) until it reaches MyCollection, which has nothing
+     * under it.
+     */
     private static String resolveCollectionNameFromMetadata(File targetRunDir, String ownSuiteName) {
         File metadataDir = new File(targetRunDir, '.metadata')
         if (!new File(metadataDir, '.collection').isFile()) {
             return null
         }
-        File[] entries = metadataDir.listFiles({ File f -> f.isDirectory() } as FileFilter)
-        if (!entries || entries.length == 0) {
-            return null
+        File cursor = metadataDir
+        int guard = 0
+        while (guard++ < 20) {
+            File[] entries = cursor.listFiles({ File f -> f.isDirectory() } as FileFilter)
+            if (!entries || entries.length == 0) {
+                return null
+            }
+            File chosen = entries.find { it.name != ownSuiteName } ?: entries[0]
+            File[] deeper = chosen.listFiles({ File f -> f.isDirectory() } as FileFilter)
+            if (!deeper || deeper.length == 0) {
+                return chosen.name
+            }
+            cursor = chosen
         }
-        File match = entries.find { it.name != ownSuiteName }
-        return (match ?: entries[0]).name
+        return null
     }
 
     /**
@@ -715,19 +958,53 @@ class AllureReportBridge {
      * Still returns null (falling through to the suite's own name) if zero
      * or more than one candidate matches - should not happen in practice,
      * but the fallback stays in place rather than guessing.
+     *
+     * A collection nested inside a Test Suites folder mirrors that folder
+     * path here too (same as resolveCollectionNameFromMetadata() above) -
+     * the top-level sibling is the intermediate folder (e.g.
+     * "Regression"), which itself satisfies neither condition directly
+     * but has exactly one subfolder ("MyCollection") that does.
+     * descendToCollectionFolder() walks each top-level candidate down
+     * through such single-subfolder chains looking for the first
+     * directory, at any depth, that satisfies the two conditions.
      */
     private static String resolveCollectionNameFromSiblingFolder(File targetRunDir, String ownSuiteName) {
         File[] siblingDirs = targetRunDir.listFiles({ File f -> f.isDirectory() } as FileFilter)
         if (!siblingDirs) {
             return null
         }
-        List<File> candidates = siblingDirs.findAll { it.name != ownSuiteName && it.name != 'requests' }
+        List<File> candidates = siblingDirs.findAll { it.name != ownSuiteName && it.name != 'requests' && it.name != '.metadata' }
         String runRootName = targetRunDir.name
-        List<File> matches = candidates.findAll { File dir ->
-            File matchingSubDir = new File(dir, runRootName)
-            matchingSubDir.isDirectory() && !new File(matchingSubDir, 'execution0.log').isFile()
+        List<String> matches = candidates.collect { descendToCollectionFolder(it, runRootName) }.findAll { it != null }
+        return matches.size() == 1 ? matches[0] : null
+    }
+
+    /**
+     * Walks down from `dir` through single-subfolder chains, looking for
+     * the first directory (at any depth) with a subfolder named exactly
+     * like the run root and no execution0.log in it - see
+     * resolveCollectionNameFromSiblingFolder() above. Returns that
+     * directory's own name, or null if this chain never satisfies it
+     * (e.g. a genuine member suite candidate, which has execution0.log
+     * under its own run-root-named subfolder, and then branches into
+     * multiple test-case subfolders rather than continuing as a single
+     * chain).
+     */
+    private static String descendToCollectionFolder(File dir, String runRootName) {
+        File cursor = dir
+        int guard = 0
+        while (cursor != null && guard++ < 20) {
+            File matchingSubDir = new File(cursor, runRootName)
+            if (matchingSubDir.isDirectory() && !new File(matchingSubDir, 'execution0.log').isFile()) {
+                return cursor.name
+            }
+            File[] children = cursor.listFiles({ File f -> f.isDirectory() } as FileFilter)
+            if (!children || children.length != 1) {
+                return null
+            }
+            cursor = children[0]
         }
-        return matches.size() == 1 ? matches[0].name : null
+        return null
     }
 
     /**
@@ -767,8 +1044,8 @@ class AllureReportBridge {
 
             TestResult result = new TestResult()
             result.setUuid(uuid)
-            // Suite name + this suite's occurrence ordinal, not just the
-            // test case id alone - see suiteOccurrenceOrdinal() for why.
+            // Suite name + this suite's occurrence discriminator, not
+            // just the test case id alone - see suiteOccurrenceDiscriminator() for why.
             // Two different suites can legitimately share a reusable test
             // case (same testCaseId, different suite), and a Test Suite
             // Collection can legitimately run the very same suite more than
@@ -776,7 +1053,7 @@ class AllureReportBridge {
             // cases, and Allure treats same-historyId results as retries of
             // one logical test, silently collapsing every earlier one out
             // of the default report view.
-            result.setHistoryId(ResultsUtils.md5("${suiteName}#${suiteOccurrenceOrdinal()}|${testCaseId}"))
+            result.setHistoryId(ResultsUtils.md5("${suiteName}#${suiteOccurrenceDiscriminator(suiteName)}|${testCaseId}"))
             result.setTestCaseId(testCaseId)
             result.setName(name)
             result.setFullName(testCaseId)
