@@ -161,6 +161,17 @@ Trend/History graphs carried forward from the previous run.
 - **A lone Test Case** run directly, no saved suite involved -> named
   after that test case.
 
+A Test Suite that actually opens a browser shows it right in its name in
+the Suites view (e.g. `API Test Suite (Chrome)`), and the Environment
+panel lists every browser actually used across the run (e.g.
+`Chrome, Firefox`) instead of just whichever suite happened to start
+last. A suite that never opens a browser - an API-only test case, say,
+even one sharing a Run Configuration that has a browser nominally
+selected - doesn't get one shown, since it never actually used it. If a
+Collection runs the same Test Suite more than once - same browser or
+different - each occurrence shows up as its own entry instead of being
+merged into one.
+
 Each report reflects only the run it's named after - `allure-results/` is
 cleared of unrelated earlier runs at the start of a suite (see
 `allure.clean.results.before.run` below), but *not* between consecutive
