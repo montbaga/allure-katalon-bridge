@@ -660,6 +660,35 @@ class AllureReportBridge {
      * Test Suites folders it's nested under above it.
      */
     private static String suiteInstanceKey(File runDir) {
+        List<String> segments = suiteInstancePathSegments(runDir)
+        if (segments == null) {
+            return null
+        }
+        int timestampIndex = segments.findIndexOf { it ==~ /\d{8}_\d{6}/ }
+        return timestampIndex > 0 ? segments[0..<timestampIndex].join('/') : null
+    }
+
+    /**
+     * Same folder path as suiteInstanceKey(), but keeping the timestamp
+     * segment instead of stopping before it. On Katalon Runtime Engine's
+     * console mode on macOS, repeated occurrences of the same suite in
+     * one Collection share a single parent folder with separate
+     * timestamp subfolders (e.g. "New Test Suite/<ts1>" and
+     * "New Test Suite/<ts2>"), rather than each getting its own
+     * disambiguated sibling folder. suiteInstanceKey() alone resolves
+     * both to the same "New Test Suite" - keeping the timestamp tells
+     * them apart. See suiteOccurrenceDiscriminator().
+     */
+    private static String suiteInstancePathWithTimestamp(File runDir) {
+        List<String> segments = suiteInstancePathSegments(runDir)
+        if (segments == null) {
+            return null
+        }
+        int timestampIndex = segments.findIndexOf { it ==~ /\d{8}_\d{6}/ }
+        return timestampIndex >= 0 ? segments[0..timestampIndex].join('/') : null
+    }
+
+    private static List<String> suiteInstancePathSegments(File runDir) {
         try {
             String reportFolder = RunConfiguration.getReportFolder()
             if (!reportFolder || !reportFolder.trim()) {
@@ -671,9 +700,7 @@ class AllureReportBridge {
                 return null
             }
             String relative = reportFolderCanonical.substring(runDirCanonical.length() + 1).replace('\\', '/')
-            List<String> segments = relative.split('/') as List
-            int timestampIndex = segments.findIndexOf { it ==~ /\d{8}_\d{6}/ }
-            return timestampIndex > 0 ? segments[0..<timestampIndex].join('/') : null
+            return relative.split('/') as List
         } catch (Throwable ignored) {
             return null
         }
@@ -771,6 +798,17 @@ class AllureReportBridge {
      * returning "0" whether or not plan.jsonl exists, and only the
      * population actually at risk of two occurrences colliding is
      * affected.
+     *
+     * suiteInstanceKey() alone isn't enough on platforms where repeated
+     * occurrences share one parent folder instead of getting their own
+     * (see suiteInstancePathWithTimestamp()) - it resolves to the same
+     * value for both, recreating the exact collision this method exists
+     * to prevent. Falls back to the timestamp-inclusive path only once
+     * that shared parent is confirmed to hold more than one timestamp
+     * subfolder, trading historyId stability for that specific case; a
+     * single-occurrence suite still gets suiteInstanceKey()'s stable
+     * value, since a same-run collision is worse than losing trend
+     * continuity, but only for suites actually at risk of it.
      */
     private static String suiteOccurrenceDiscriminator(String ownSuiteName) {
         List<Integer> fromPlan = suiteOccurrenceFromPlan()
@@ -787,10 +825,21 @@ class AllureReportBridge {
                 return '0'
             }
             String key = suiteInstanceKey(runDir)
-            return key ?: '0'
+            if (!key) {
+                return '0'
+            }
+            if (key != ownSuiteName || !hasMultipleTimestampSubfolders(new File(runDir, key))) {
+                return key
+            }
+            return suiteInstancePathWithTimestamp(runDir) ?: key
         } catch (Throwable ignored) {
             return '0'
         }
+    }
+
+    private static boolean hasMultipleTimestampSubfolders(File instanceDir) {
+        File[] timestampDirs = instanceDir.listFiles({ File f -> f.isDirectory() && f.name ==~ /\d{8}_\d{6}/ } as FileFilter)
+        return timestampDirs != null && timestampDirs.length > 1
     }
 
     /**
@@ -883,16 +932,17 @@ class AllureReportBridge {
      *     run's own root (see expectedSuiteCountForRun(), which already
      *     depends on this same fact). Correct regardless of nesting
      *     depth, as long as plan.jsonl already exists.
-     *  2. plan.jsonl isn't always written yet at this point: an early
-     *     sub-suite's own startSuite() inside a Test Suite Collection can
-     *     run before Katalon has flushed plan.jsonl to disk, even though
-     *     the run's own folder tree already exists. For that case, fall
-     *     back to getReportFolder()'s own grandparent directly - a
-     *     standalone suite and a Test Suite Collection's own member suite
-     *     both use the identical shape "<run-dir>/<SuiteName>/<run-ts>"
-     *     (a collection does not add its own extra nesting level), so
-     *     the grandparent is the correct run root either way, without
-     *     needing plan.jsonl to exist yet.
+     *  2. plan.jsonl is never written at all in Katalon Runtime Engine's
+     *     console mode - true on every CI platform, not just some - so
+     *     this is the path CI always actually takes. Falls back to
+     *     runRootFromTimestampFolders() instead of a fixed parent-hop
+     *     count: a suite nested inside a Test Suites folder (e.g.
+     *     "TestSuitesFolder/FolderSuite") sits one level deeper below the
+     *     run root than a suite that isn't, so counting hops guesses
+     *     wrong for the nested case specifically - confirmed from a
+     *     Windows CI run where this returned the "TestSuitesFolder"
+     *     folder itself instead of the actual run root one level above
+     *     it, breaking that suite's collection-name resolution.
      */
     private static File currentRunDir() {
         try {
@@ -908,11 +958,38 @@ class AllureReportBridge {
             if (cursor != null && new File(cursor, 'plan.jsonl').isFile()) {
                 return cursor
             }
-            File grandparent = new File(reportFolder).parentFile?.parentFile
-            return (grandparent != null && grandparent.isDirectory()) ? grandparent : null
+            return runRootFromTimestampFolders(new File(reportFolder))
         } catch (Throwable ignored) {
             return null
         }
+    }
+
+    /**
+     * Walks up from a suite's own report folder to the run root, without
+     * assuming a fixed number of parent hops - the run root and every
+     * suite's own per-execution folder are both named with Katalon's
+     * yyyyMMdd_HHmmss timestamp format, but a suite nested inside a Test
+     * Suites folder has more path segments between them than one that
+     * isn't. The first timestamp-shaped ancestor reached is the suite's
+     * own (skipped); the next one after that is the run root, regardless
+     * of how many plain-named folders (Test Suites folder nesting, an
+     * ISOLATED_PROCESS suite's extra test-case-level segment) sit between
+     * them.
+     */
+    private static File runRootFromTimestampFolders(File reportFolder) {
+        File cursor = reportFolder
+        boolean pastOwnTimestamp = false
+        int guard = 0
+        while (cursor != null && guard++ < 20) {
+            if (cursor.name ==~ /\d{8}_\d{6}/) {
+                if (pastOwnTimestamp) {
+                    return cursor
+                }
+                pastOwnTimestamp = true
+            }
+            cursor = cursor.parentFile
+        }
+        return null
     }
 
     /**
