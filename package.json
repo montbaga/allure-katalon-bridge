@@ -1,6 +1,6 @@
 {
   "name": "allure-katalon-bridge",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Zero-touch Allure reporting for Katalon Studio projects - install with one command, no plugin, no OSGi packaging.",
   "keywords": [
     "katalon",
