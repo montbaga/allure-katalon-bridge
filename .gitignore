@@ -20,3 +20,7 @@ desktop.ini
 
 # Internal development history - not part of the public-facing product
 /CHANGELOG.md
+
+# npm
+node_modules/
+*.tgz
