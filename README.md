@@ -1,5 +1,7 @@
 # Allure-Katalon Bridge
 
+[![npm version](https://img.shields.io/npm/v/allure-katalon-bridge.svg)](https://www.npmjs.com/package/allure-katalon-bridge)
+
 Turn any Katalon Studio project into an Allure-reporting project by
 double-clicking one file - no plugin installation, no OSGi packaging, no
 command line, no changes to existing Test Cases or Test Suites.
