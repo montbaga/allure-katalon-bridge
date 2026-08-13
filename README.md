@@ -11,7 +11,24 @@ under the hood.
 
 Open the folder matching your OS - it contains only what you need, nothing
 from the other platforms. Each section below is self-contained: the quick
-double-click way, and the scripted/CI way with the same flags.
+double-click way, and the scripted/CI way with the same flags. Prefer one
+command that works the same on every OS instead? See npm below.
+
+<details>
+<summary><b>📦 npm (any OS)</b></summary>
+
+Needs Node.js. Works identically on Windows, macOS, and Linux - useful for
+CI, or if you'd rather not pick an OS-specific script.
+
+```
+npx allure-katalon-bridge install "/path/to/your/katalon/project"      # add --force to also overwrite a customized allure.properties
+npx allure-katalon-bridge uninstall "/path/to/your/katalon/project"    # add --remove-config to also delete allure.properties/categories.json
+```
+
+`npx` fetches and runs it without installing anything globally. To install
+it once and reuse it: `npm install -g allure-katalon-bridge`, then run
+`allure-katalon-bridge install ...` directly.
+</details>
 
 <details>
 <summary><b>🪟 Windows/</b></summary>
