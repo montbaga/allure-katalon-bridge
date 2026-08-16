@@ -1,6 +1,9 @@
 # Allure-Katalon Bridge
 
 [![npm version](https://img.shields.io/npm/v/allure-katalon-bridge.svg)](https://www.npmjs.com/package/allure-katalon-bridge)
+[![License: Apache-2.0](https://img.shields.io/npm/l/allure-katalon-bridge.svg)](LICENSE.md)
+[![Last commit](https://img.shields.io/github/last-commit/montbaga/allure-katalon-bridge.svg)](https://github.com/montbaga/allure-katalon-bridge/commits/main)
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-red)](https://github.com/sponsors/montbaga)
 
 Turn any Katalon Studio project into an Allure-reporting project by
 double-clicking one file - no plugin installation, no OSGi packaging, no
