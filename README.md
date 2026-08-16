@@ -9,6 +9,20 @@ command line, no changes to existing Test Cases or Test Suites.
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for how this is actually built
 under the hood.
 
+## Sponsors
+
+<!-- Company logos go here as Priority Partner / Company sponsors join -->
+
+If your team relies on this in CI, consider
+[sponsoring the project](https://github.com/sponsors/montbaga) to support
+ongoing maintenance. Company sponsors get their logo listed here.
+
+## Backers
+
+<!-- Names go here as backers join -->
+
+Thanks to everyone supporting this project.
+
 ## Install / Uninstall
 
 Open the folder matching your OS - it contains only what you need, nothing
