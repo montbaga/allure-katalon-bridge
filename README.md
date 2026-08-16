@@ -27,6 +27,44 @@ under the hood.
 
 ![Allure report opened in browser](demo/images/allure_html_last_Step.jpg)
 
+## Verified in CI
+
+The same `kzissues` Test Suite Collection runs unmodified on Azure Pipelines
+hosted agents for Windows, macOS, and Linux - same YAML steps, no
+platform-specific workarounds. Full example in
+[`azure-pipelines.example.yml`](azure-pipelines.example.yml).
+
+**The pipeline itself, running on hosted agents**
+
+<table>
+<tr><th>Windows</th><th>Linux</th></tr>
+<tr>
+<td><img src="demo/images/Windows_CI.png" width="420"></td>
+<td><img src="demo/images/ci_linux.jpg" width="420"></td>
+</tr>
+</table>
+
+**Each platform produces its own Allure report, environment details and all**
+
+<table>
+<tr><th>Windows</th><th>macOS</th><th>Linux</th></tr>
+<tr>
+<td><img src="demo/images/ci_window_allure_report.png" width="280"></td>
+<td><img src="demo/images/ci_macos_allure_html.png" width="280"></td>
+<td><img src="demo/images/ci_linux_html.jpg" width="280"></td>
+</tr>
+</table>
+
+**And published as downloadable pipeline artifacts, ready to open from the run itself**
+
+<table>
+<tr><th>Windows + macOS</th><th>Linux</th></tr>
+<tr>
+<td><img src="demo/images/ci_artifacts_win_macos.png" width="420"></td>
+<td><img src="demo/images/ci_linux_artifacts.jpg" width="420"></td>
+</tr>
+</table>
+
 ## Sponsors
 
 <!-- Company logos go here as Priority Partner / Company sponsors join -->
