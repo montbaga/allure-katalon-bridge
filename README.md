@@ -9,6 +9,24 @@ command line, no changes to existing Test Cases or Test Suites.
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for how this is actually built
 under the hood.
 
+## See It in Action
+
+**1. Install with one command**
+
+![Install with npx](demo/images/install_npx_1st_Step.jpg)
+
+**2. Run your test suite or collection like you always do**
+
+![Run a test suite](demo/images/run_test_suite_or_collection_2nd_Step.jpg)
+
+**3. The Allure report is generated automatically, right inside Katalon Studio**
+
+![Report generated in Katalon Studio](demo/images/allure_report_3rd_Step.jpg)
+
+**4. Open it and get the full picture - suites, steps, screenshots, everything**
+
+![Allure report opened in browser](demo/images/allure_html_last_Step.jpg)
+
 ## Sponsors
 
 <!-- Company logos go here as Priority Partner / Company sponsors join -->
