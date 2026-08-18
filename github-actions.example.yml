@@ -10,6 +10,12 @@
 # GitHub Actions from the standard GITHUB_ACTIONS / GITHUB_RUN_ID variables
 # GitHub sets automatically, so the Allure report header links back to this
 # exact run with no setup required.
+#
+# The montbaga/allure-katalon-bridge step below is optional - the bridge
+# only needs to be installed once locally, with the resulting files
+# committed to your repo like any other project file. Including it here
+# just keeps everyone's checkout in sync automatically (idempotent: safe
+# to run on every build, upgrades in place, no-ops if already current).
 
 name: Katalon CI
 
@@ -30,6 +36,11 @@ jobs:
 
       - name: Install Allure commandline
         run: npm install -g allure-commandline
+
+      - name: Keep Allure-Katalon Bridge up to date
+        uses: montbaga/allure-katalon-bridge@v1
+        with:
+          project-path: '${{ github.workspace }}'
 
       - name: Run Katalon tests
         uses: katalon-studio/katalon-studio-github-action@v4.0
