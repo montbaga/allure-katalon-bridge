@@ -1,5 +1,5 @@
 name: 'Allure-Katalon Bridge'
-description: 'Install or upgrade Allure-Katalon Bridge in a Katalon Studio project - zero-touch Allure reporting, no plugin, no OSGi packaging.'
+description: 'Zero-touch Allure reporting for Katalon Studio - no plugin, no OSGi packaging, no test script changes.'
 author: 'Monty Bagati'
 branding:
   icon: 'bar-chart-2'
