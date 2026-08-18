@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create a fake Katalon project to install into
+        run: |
+          mkdir -p /tmp/fake-project
+          touch /tmp/fake-project/FakeProject.prj
+
+      - name: Run the action against it
+        uses: ./
+        with:
+          project-path: /tmp/fake-project
+
+      - name: Verify expected files landed
+        run: |
+          test -f "/tmp/fake-project/Test Listeners/AllureTestListener.groovy"
+          test -f "/tmp/fake-project/Keywords/allure/AllureReportBridge.groovy"
+          test -f "/tmp/fake-project/Include/config/allure/allure.properties"
+          echo "All expected files present."

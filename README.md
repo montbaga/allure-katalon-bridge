@@ -1,6 +1,7 @@
 # Allure-Katalon Bridge
 
 [![npm version](https://img.shields.io/npm/v/allure-katalon-bridge.svg)](https://www.npmjs.com/package/allure-katalon-bridge)
+[![CI](https://img.shields.io/github/actions/workflow/status/montbaga/allure-katalon-bridge/ci.yml?branch=main&label=CI)](https://github.com/montbaga/allure-katalon-bridge/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/npm/l/allure-katalon-bridge.svg)](LICENSE.md)
 [![Last commit](https://img.shields.io/github/last-commit/montbaga/allure-katalon-bridge.svg)](https://github.com/montbaga/allure-katalon-bridge/commits/main)
 [![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-red)](https://github.com/sponsors/montbaga)
@@ -350,6 +351,16 @@ Reports show up on the pipeline run's **Summary** tab, in the small
 
 Reports show up on the **Actions** tab, under that run's summary page, in
 the **Artifacts** section at the bottom.
+
+The example config already includes the bridge itself as a published
+[GitHub Action](https://github.com/marketplace/actions/allure-katalon-bridge),
+so CI always runs against the current version without a raw npx command:
+
+```yaml
+- uses: montbaga/allure-katalon-bridge@v1
+  with:
+    project-path: '${{ github.workspace }}'
+```
 
 ### GitLab CI
 
