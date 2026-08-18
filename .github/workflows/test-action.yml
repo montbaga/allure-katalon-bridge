@@ -1,6 +1,9 @@
 name: Test action (throwaway)
 
 on:
+  push:
+    branches:
+      - github-action
   workflow_dispatch:
 
 jobs:
