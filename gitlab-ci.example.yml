@@ -40,8 +40,8 @@ variables:
     - curl -sL "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz" -o /tmp/allure.tgz
     - tar xf /tmp/allure.tgz -C /opt
     - export PATH="/opt/allure-${ALLURE_VERSION}/bin:$PATH"
-    - curl -sL "https://nodejs.org/dist/v18.20.4/node-v18.20.4-linux-x64.tar.xz" -o /tmp/node.tar.xz
-    - tar xf /tmp/node.tar.xz -C /opt
+    - curl -sL "https://nodejs.org/dist/v18.20.4/node-v18.20.4-linux-x64.tar.gz" -o /tmp/node.tar.gz
+    - tar xf /tmp/node.tar.gz -C /opt
     - export PATH="/opt/node-v18.20.4-linux-x64/bin:$PATH"
     - npx allure-katalon-bridge install "$CI_PROJECT_DIR"
   artifacts:
