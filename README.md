@@ -75,7 +75,14 @@ platform-specific workarounds. Full example in
 
 If your team relies on this in CI, consider
 [sponsoring the project](https://github.com/sponsors/montbaga) to support
-ongoing maintenance. Company sponsors get their logo listed here.
+ongoing maintenance:
+
+| Tier | Price | Gets you |
+|---|---|---|
+| Coffee | $5/mo | Your name added to the Backers list below |
+| Backer | $15/mo | Everything above, plus priority attention on your issues |
+| Company | $100/mo | Your company's logo and site link here, near the top of the README |
+| Priority Partner | $199/mo | Everything above, plus direct email help wiring the bridge into your CI setup |
 
 ## Backers
 
