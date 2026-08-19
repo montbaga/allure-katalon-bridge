@@ -383,6 +383,14 @@ Reports show up on the pipeline job's page, in the **Job artifacts** panel.
 
 ### Worth knowing regardless of platform
 
+- **All three example configs keep the bridge itself up to date in CI**,
+  either via the [GitHub Action](https://github.com/marketplace/actions/allure-katalon-bridge)
+  or a plain `npx allure-katalon-bridge install` step. This means a CI
+  pipeline produces real Allure reports even if you never ran the
+  installer locally first. It does **not** commit anything back to your
+  repo, though, so a local Katalon Studio run still needs the installer
+  run and committed once, this step only keeps CI's own checkout current,
+  every run, automatically.
 - **`--config -webui.autoUpdateDrivers=true`** is included in all three
   examples. A hosted CI agent's browser updates itself automatically, and
   Katalon's own bundled WebUI driver can fall behind it - without this

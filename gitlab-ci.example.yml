@@ -18,6 +18,13 @@
 # The Docker image doesn't include the Allure commandline, so this installs
 # it directly from GitHub releases rather than assuming npm is available in
 # every base image.
+#
+# It also isn't confirmed to include Node.js, so before_script fetches a
+# portable Node binary the same way, then runs the bridge installer against
+# this job's own checkout. That keeps CI itself producing real Allure
+# reports even if you never ran the installer locally - nothing here is
+# committed back to your repo, though, so a local Katalon Studio run still
+# needs the installer run and committed once for local Allure reporting.
 
 image: katalonstudio/katalon:11.3.0
 
@@ -33,6 +40,10 @@ variables:
     - curl -sL "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz" -o /tmp/allure.tgz
     - tar xf /tmp/allure.tgz -C /opt
     - export PATH="/opt/allure-${ALLURE_VERSION}/bin:$PATH"
+    - curl -sL "https://nodejs.org/dist/v18.20.4/node-v18.20.4-linux-x64.tar.xz" -o /tmp/node.tar.xz
+    - tar xf /tmp/node.tar.xz -C /opt
+    - export PATH="/opt/node-v18.20.4-linux-x64/bin:$PATH"
+    - npx allure-katalon-bridge install "$CI_PROJECT_DIR"
   artifacts:
     when: always
     paths:

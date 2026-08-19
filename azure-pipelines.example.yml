@@ -38,6 +38,15 @@ steps:
   - script: npm install -g allure-commandline
     displayName: 'Install Allure commandline'
 
+  # Installs/upgrades the bridge into this job's own checkout before the
+  # Katalon step runs, so this pipeline produces real Allure reports even
+  # if you never ran the installer locally. Nothing here is committed back
+  # to your repo, so a local Katalon Studio run still won't have Allure
+  # reporting until you also run the installer locally once and commit the
+  # result - this step only keeps CI itself current.
+  - script: npx allure-katalon-bridge install "$(Build.SourcesDirectory)"
+    displayName: 'Keep Allure-Katalon Bridge up to date'
+
   - task: PowerShell@2
     displayName: 'Clean bin/ before Katalon run'
     inputs:
