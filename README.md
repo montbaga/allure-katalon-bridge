@@ -111,6 +111,10 @@ npx allure-katalon-bridge uninstall "/path/to/your/katalon/project"    # add --r
 `npx` fetches and runs it without installing anything globally. To install
 it once and reuse it: `npm install -g allure-katalon-bridge`, then run
 `allure-katalon-bridge install ...` directly.
+
+Setting this up in GitHub Actions instead? See [CI setup](#ci-setup)
+below, there's a published GitHub Action so you don't need a raw npx
+command in your workflow.
 </details>
 
 <details>
