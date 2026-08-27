@@ -14,11 +14,12 @@ name: Katalon compatibility check
 # manually when a new Katalon Studio version ships.
 
 on:
-  push:
-    branches:
-      - katalon-compat-fixture
+  # Runs daily at 00:00 UTC - 2am Latvian winter time (EET, UTC+2), 3am
+  # during Latvian summer DST (EEST, UTC+3). GitHub Actions cron has no
+  # timezone/DST awareness, so this drifts an hour twice a year rather
+  # than tracking the clock change exactly.
   schedule:
-    - cron: '0 6 * * 1'
+    - cron: '0 0 * * *'
   workflow_dispatch:
     inputs:
       katalon_version:
