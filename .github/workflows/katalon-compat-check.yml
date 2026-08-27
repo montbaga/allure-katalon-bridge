@@ -52,6 +52,17 @@ jobs:
       - name: Install the bridge from this repo's current code
         run: node bin/cli.js install test-fixture
 
+      - name: Check the API key secret is actually populated
+        shell: bash
+        env:
+          KATALON_API_KEY: ${{ secrets.KATALON_API_KEY }}
+        run: |
+          if [ -z "$KATALON_API_KEY" ]; then
+            echo "KATALON_API_KEY is empty or not set - check the secret name matches exactly."
+            exit 1
+          fi
+          echo "KATALON_API_KEY is set, length: ${#KATALON_API_KEY}"
+
       # katalon-studio-github-action has no built-in Xvfb support, and a
       # backgrounded Xvfb with no readiness check is what caused a silent
       # hang in the Azure Pipelines Linux job earlier - this waits for the
