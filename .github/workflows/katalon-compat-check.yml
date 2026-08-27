@@ -30,6 +30,12 @@ jobs:
   compat:
     strategy:
       fail-fast: false
+      # Runs one OS at a time - the Katalon Runtime Engine license used
+      # here only allows one machine to activate it at once, so running
+      # the matrix in parallel (GitHub Actions' default) would make at
+      # least two of the three legs fail on activation regardless of
+      # whether anything else is actually broken.
+      max-parallel: 1
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
