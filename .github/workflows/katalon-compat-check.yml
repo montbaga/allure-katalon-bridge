@@ -14,6 +14,9 @@ name: Katalon compatibility check
 # manually when a new Katalon Studio version ships.
 
 on:
+  push:
+    branches:
+      - katalon-compat-fixture
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch:
