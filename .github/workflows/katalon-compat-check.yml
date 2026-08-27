@@ -1,0 +1,169 @@
+name: Katalon compatibility check
+
+# Runs the bridge's own installer (from this repo's current code, not the
+# published npm package) against test-fixture/, then runs its kzissues Test
+# Suite Collection on a real Katalon Studio install across Windows, macOS,
+# and Linux. Unlike ci.yml, this exercises a real Katalon run and checks the
+# actual generated Allure output, catching drift if Katalon Studio's own
+# behavior changes in a way that silently breaks reporting (the bridge's
+# hooks only log a warning and never fail a real test, so a break here
+# would otherwise go unnoticed until a user hit it).
+#
+# katalon-studio-github-action has no documented "latest version" keyword,
+# so the version tested is a workflow input with a fixed default, bump it
+# manually when a new Katalon Studio version ships.
+
+on:
+  # Runs daily at 00:00 UTC - 2am Latvian winter time (EET, UTC+2), 3am
+  # during Latvian summer DST (EEST, UTC+3). GitHub Actions cron has no
+  # timezone/DST awareness, so this drifts an hour twice a year rather
+  # than tracking the clock change exactly.
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      katalon_version:
+        description: 'Katalon Studio version to test against'
+        required: false
+        default: '11.4.0'
+
+jobs:
+  compat:
+    strategy:
+      fail-fast: false
+      # Runs one OS at a time - the Katalon Runtime Engine license used
+      # here only allows one machine to activate it at once, so running
+      # the matrix in parallel (GitHub Actions' default) would make at
+      # least two of the three legs fail on activation regardless of
+      # whether anything else is actually broken.
+      max-parallel: 1
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Allure commandline
+        run: npm install -g allure-commandline
+
+      - name: Install the bridge from this repo's current code
+        run: node bin/cli.js install test-fixture
+
+      - name: Check the API key secret is actually populated
+        shell: bash
+        env:
+          KATALON_API_KEY: ${{ secrets.KATALON_API_KEY }}
+        run: |
+          if [ -z "$KATALON_API_KEY" ]; then
+            echo "KATALON_API_KEY is empty or not set - check the secret name matches exactly."
+            exit 1
+          fi
+          echo "KATALON_API_KEY is set, length: ${#KATALON_API_KEY}"
+
+      # katalon-studio-github-action has no built-in Xvfb support, and a
+      # backgrounded Xvfb with no readiness check is what caused a silent
+      # hang in the Azure Pipelines Linux job earlier - this waits for the
+      # display to actually accept connections before continuing.
+      - name: Start Xvfb
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb x11-utils
+          Xvfb :99 -screen 0 1920x1080x24 &
+          for i in $(seq 1 30); do
+            if xdpyinfo -display :99 >/dev/null 2>&1; then
+              echo "Xvfb is ready"
+              break
+            fi
+            sleep 1
+          done
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      # Katalon Studio 11.x's OSGi bundles require JavaSE 21; ubuntu-latest
+      # doesn't default to it. Same fix as the Azure Pipelines Linux job.
+      - name: Use JDK 21
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+
+      # continue-on-error: this step exits non-zero on ANY non-passed test
+      # case, same as a real test failure (e.g. a flaky assertion against
+      # the CURA demo site). That's a different question from "did the
+      # bridge/reporting break," which is what this job is actually
+      # checking, so a test failure here shouldn't fail the job on its
+      # own - the validation steps below check the bridge's own output
+      # (result file count, executor.json, report existence/size)
+      # regardless of whether individual test cases passed, and are what
+      # actually gate the job's pass/fail.
+      - name: Run kzissues (Test Suite Collection)
+        continue-on-error: true
+        uses: katalon-studio/katalon-studio-github-action@v4.0
+        with:
+          version: ${{ github.event.inputs.katalon_version || '11.4.0' }}
+          projectPath: '${{ github.workspace }}/test-fixture'
+          args: '-noSplash -retry=0 -testSuiteCollectionPath="Test Suites/TestSuitesFolder/kzissues" -executionProfile="default" -apiKey=${{ secrets.KATALON_API_KEY }} --config -webui.autoUpdateDrivers=true -reportFolder="${{ github.workspace }}/test-fixture/Reports"'
+
+      - name: Validate Allure results were generated
+        if: always()
+        shell: bash
+        run: |
+          RESULTS_DIR="test-fixture/allure-results"
+          EXPECTED_COUNT=6
+          ACTUAL_COUNT=$(find "$RESULTS_DIR" -name "*-result.json" 2>/dev/null | wc -l | tr -d ' ')
+          echo "Found $ACTUAL_COUNT result file(s), expected $EXPECTED_COUNT."
+          if [ "$ACTUAL_COUNT" != "$EXPECTED_COUNT" ]; then
+            echo "Result count mismatch, a hook likely failed silently for at least one test case."
+            exit 1
+          fi
+
+      - name: Validate executor metadata was captured
+        if: always()
+        shell: bash
+        run: |
+          FILE="test-fixture/allure-results/executor.json"
+          if [ ! -f "$FILE" ]; then
+            echo "executor.json is missing."
+            exit 1
+          fi
+          cat "$FILE"
+
+      - name: Validate the Allure report was generated
+        if: always()
+        shell: bash
+        run: |
+          REPORT_FILE=$(find test-fixture/allure-report -name "*.html" 2>/dev/null | head -1)
+          if [ -z "$REPORT_FILE" ]; then
+            echo "No generated Allure report HTML file found."
+            exit 1
+          fi
+          SIZE=$(wc -c < "$REPORT_FILE" | tr -d ' ')
+          echo "Report file: $REPORT_FILE ($SIZE bytes)"
+          if [ "$SIZE" -lt 100000 ]; then
+            echo "Report file is too small to be a real report."
+            exit 1
+          fi
+          # No content check beyond size: the single-file report embeds
+          # its data compressed/encoded, so real Suite/case names aren't
+          # searchable as plain text here - confirmed against a real,
+          # verified-correct 3MB report where two different real Suite
+          # names both failed to grep. Size plus the result-file count
+          # check above are what actually confirm this ran correctly.
+
+      - name: Publish Katalon report folder
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: katalon-compat-reports-${{ matrix.os }}
+          path: test-fixture/Reports
+
+      - name: Publish Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: katalon-compat-allure-report-${{ matrix.os }}
+          path: test-fixture/allure-report
