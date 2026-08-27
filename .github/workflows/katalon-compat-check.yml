@@ -96,9 +96,9 @@ jobs:
       # bridge/reporting break," which is what this job is actually
       # checking, so a test failure here shouldn't fail the job on its
       # own - the validation steps below check the bridge's own output
-      # (result file count, executor.json, report content) regardless of
-      # whether individual test cases passed, and are what actually gate
-      # the job's pass/fail.
+      # (result file count, executor.json, report existence/size)
+      # regardless of whether individual test cases passed, and are what
+      # actually gate the job's pass/fail.
       - name: Run kzissues (Test Suite Collection)
         continue-on-error: true
         uses: katalon-studio/katalon-studio-github-action@v4.0
@@ -146,10 +146,12 @@ jobs:
             echo "Report file is too small to be a real report."
             exit 1
           fi
-          if ! grep -a -q "APITestSuite1" "$REPORT_FILE"; then
-            echo "Report does not contain an expected Test Suite name."
-            exit 1
-          fi
+          # No content check beyond size: the single-file report embeds
+          # its data compressed/encoded, so real Suite/case names aren't
+          # searchable as plain text here - confirmed against a real,
+          # verified-correct 3MB report where two different real Suite
+          # names both failed to grep. Size plus the result-file count
+          # check above are what actually confirm this ran correctly.
 
       - name: Publish Katalon report folder
         if: always()
