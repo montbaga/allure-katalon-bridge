@@ -90,7 +90,17 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
           echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
 
+      # continue-on-error: this step exits non-zero on ANY non-passed test
+      # case, same as a real test failure (e.g. a flaky assertion against
+      # the CURA demo site). That's a different question from "did the
+      # bridge/reporting break," which is what this job is actually
+      # checking, so a test failure here shouldn't fail the job on its
+      # own - the validation steps below check the bridge's own output
+      # (result file count, executor.json, report content) regardless of
+      # whether individual test cases passed, and are what actually gate
+      # the job's pass/fail.
       - name: Run kzissues (Test Suite Collection)
+        continue-on-error: true
         uses: katalon-studio/katalon-studio-github-action@v4.0
         with:
           version: ${{ github.event.inputs.katalon_version || '11.4.0' }}
@@ -136,8 +146,8 @@ jobs:
             echo "Report file is too small to be a real report."
             exit 1
           fi
-          if ! grep -q "kzissues" "$REPORT_FILE"; then
-            echo "Report does not contain the expected collection name."
+          if ! grep -a -q "APITestSuite1" "$REPORT_FILE"; then
+            echo "Report does not contain an expected Test Suite name."
             exit 1
           fi
 
