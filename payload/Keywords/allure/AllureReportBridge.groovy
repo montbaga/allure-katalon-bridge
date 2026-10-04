@@ -9,6 +9,7 @@ import com.kms.katalon.core.context.TestSuiteContext
 import com.kms.katalon.core.logging.KeywordLogger
 import com.kms.katalon.core.logging.TestSuiteXMLLogParser
 import com.kms.katalon.core.logging.model.ILogRecord
+import com.kms.katalon.core.logging.model.MessageLogRecord
 import com.kms.katalon.core.logging.model.TestCaseLogRecord
 import com.kms.katalon.core.logging.model.TestStatus
 import com.kms.katalon.core.logging.model.TestStepLogRecord
@@ -17,6 +18,9 @@ import com.kms.katalon.core.webui.driver.DriverFactory
 import io.qameta.allure.Allure
 import io.qameta.allure.AllureLifecycle
 import io.qameta.allure.FileSystemResultsWriter
+import io.qameta.allure.model.Attachment
+import io.qameta.allure.model.Link
+import io.qameta.allure.model.Parameter
 import io.qameta.allure.model.Stage
 import io.qameta.allure.model.Status
 import io.qameta.allure.model.StatusDetails
@@ -70,8 +74,25 @@ class AllureReportBridge {
      */
     private static final Object INTRA_JVM_LOCK = new Object()
 
+    /** Results dir the current Allure lifecycle writes to, if this bridge set one in this process. */
+    private static volatile String lifecycleResultsDir = null
+
+    private static void useResultsDir(File resultsDir) {
+        Allure.setLifecycle(new AllureLifecycle(new FileSystemResultsWriter(resultsDir.toPath())))
+        lifecycleResultsDir = resultsDir.absolutePath
+    }
+
+    private static File reportFolderOrNull() {
+        String folder = safeCall { RunConfiguration.getReportFolder() }
+        return folder?.trim() ? new File(folder) : null
+    }
+
     static void startSuite(TestSuiteContext testSuiteContext) {
         try {
+            // before the isEnabled() check, so ALLURE_ENABLED=false reaches parallel test cases too
+            try {
+                AllureConfig.saveEnvironment(currentRunDir() ?: reportFolderOrNull())
+            } catch (Throwable ignored) { }
             if (!AllureConfig.isEnabled()) {
                 return
             }
@@ -121,6 +142,13 @@ class AllureReportBridge {
                         // otherwise it would keep merging into whatever an
                         // earlier, unrelated run left behind.
                         new File(resultsDir, 'environment.properties').delete()
+                        // history/ left by an earlier run belongs to whatever
+                        // that run was; generateHtmlReport() takes it from this
+                        // run's own previous report instead. Kept when no earlier
+                        // run used this folder, e.g. a CI job restored it.
+                        if (previousRunDir?.trim()) {
+                            FileUtils.deleteQuietly(new File(resultsDir, 'history'))
+                        }
                     }
                     marker.reportPath = ''
                     // Fresh run: forget which sub-suites (if any) had
@@ -136,7 +164,7 @@ class AllureReportBridge {
                 writeRunMarker(resultsDir, runDirToRecord ?: '', marker.reportPath as String)
             }
 
-            Allure.setLifecycle(new AllureLifecycle(new FileSystemResultsWriter(resultsDir.toPath())))
+            useResultsDir(resultsDir)
 
             // Written for logging/diagnostics and as a last-resort fallback
             // only - startTestCase() and finishSuite() each re-resolve the
@@ -150,7 +178,7 @@ class AllureReportBridge {
 
             logger.logInfo("[Allure] Reporting enabled. Results directory: ${resultsDir.absolutePath}")
         } catch (Throwable t) {
-            logger.logWarning("[Allure] Failed to initialize Allure reporting: ${t}")
+            notice("Failed to initialize Allure reporting: ${t}")
         }
     }
 
@@ -165,6 +193,8 @@ class AllureReportBridge {
             // set: a static field written in one isolated phase is not
             // reliable in another (see the class-level notes).
             String suiteName = resolveSuiteName(testSuiteContext)
+
+            reportFailedSuiteFixtures(resultsDir)
 
             // Computed once - shouldGenerateReportNow() has a side effect
             // (it records this suite as complete), so it must only be
@@ -190,6 +220,136 @@ class AllureReportBridge {
         } catch (Throwable ignored) {
             // never fail the suite because of reporting
         }
+    }
+
+    /** Broken result for each failed suite @SetUp/@TearDown - Katalon runs no tests when @SetUp fails. */
+    private static void reportFailedSuiteFixtures(File resultsDir) {
+        try {
+            String suiteName = resolveSuiteNameQuiet() ?: currentSuiteName ?: 'Suite'
+            failedSuiteFixtures(readSuiteLogRecords()).each { Map fixture ->
+                String kind = fixture.kind == 'setup action' ? '@SetUp' : '@TearDown'
+                String what = fixture.kind == 'setup action' ? 'set-up' : 'tear-down'
+                Map failure = fixture.failure as Map
+                String message = failure.exceptionClass ?
+                    "${failure.exceptionClass}: ${failure.exceptionMessage ?: failure.message}" : failure.message
+
+                TestResult result = newResult(suiteName, kind, "${suiteName} - suite ${what} (${kind})")
+                result.setStatus(Status.BROKEN)
+                result.setStage(Stage.FINISHED)
+                result.setStart(fixture.start as Long)
+                result.setStop(fixture.stop as Long)
+                StatusDetails details = new StatusDetails()
+                details.setMessage(message)
+                details.setTrace(failure.stackTrace ?: message)
+                result.setStatusDetails(details)
+
+                AllureLifecycle lifecycle = new AllureLifecycle(new FileSystemResultsWriter(resultsDir.toPath()))
+                lifecycle.scheduleTestCase(result)
+                lifecycle.writeTestCase(result.getUuid())
+            }
+        } catch (Throwable t) {
+            logger.logWarning("[Allure] Could not report suite set-up/tear-down failures: ${t}")
+        }
+    }
+
+    /** Suite-level set-up/tear-down blocks that logged an error (per-test-case ones are skipped). */
+    private static List<Map> failedSuiteFixtures(List<Map> records) {
+        List<Map> failed = []
+        Map open = null
+        boolean inTestCase = false
+        records.each { Map r ->
+            String message = r.message ?: ''
+            if (message.startsWith('Start Test Case :')) {
+                inTestCase = true
+                return
+            }
+            if (message.startsWith('End Test Case :')) {
+                inTestCase = false
+                return
+            }
+            if (inTestCase) {
+                return
+            }
+            def start = message =~ /^Start (setup action|tear down) : (.+)$/
+            if (start.matches()) {
+                open = [kind: start.group(1), method: start.group(2).trim(), start: r.millis, stop: r.millis, failure: null]
+                return
+            }
+            if (open == null) {
+                return
+            }
+            open.stop = r.millis
+            if (open.failure == null && (r.level == 'ERROR' || r.level == 'FAILED')) {
+                open.failure = r
+            }
+            if (r.level == 'END' && message.endsWith(" : ${open.method}")) {
+                if (open.failure) {
+                    failed << open
+                }
+                open = null
+            }
+        }
+        if (open?.failure) {
+            failed << open
+        }
+        return failed
+    }
+
+    /** Records from this suite's execution*.log files, in order. */
+    private static List<Map> readSuiteLogRecords() {
+        String reportFolder = safeCall { RunConfiguration.getReportFolder() }
+        if (!reportFolder || !reportFolder.trim()) {
+            return []
+        }
+        // an ISOLATED_PROCESS suite's report folder can be one level below its log
+        File dir = new File(reportFolder)
+        File[] logs = null
+        for (int i = 0; i < 3 && dir != null && !logs; i++) {
+            logs = dir.listFiles({ File f -> f.isFile() && f.name ==~ /execution\d+\.log/ } as FileFilter)
+            if (!logs) {
+                dir = dir.parentFile
+            }
+        }
+        if (!logs) {
+            return []
+        }
+        List<Map> records = []
+        logs.sort { (it.name =~ /\d+/)[0] as int }.each { File log ->
+            def matcher = log.getText('UTF-8') =~ /(?s)<record>(.*?)<\/record>/
+            while (matcher.find()) {
+                String body = matcher.group(1)
+                String millis = xmlElement(body, 'millis')
+                records << [
+                    level: xmlElement(body, 'level'),
+                    message: xmlElement(body, 'message'),
+                    millis: millis?.isLong() ? millis.toLong() : null,
+                    exceptionClass: xmlProperty(body, 'failed.exception.class'),
+                    exceptionMessage: xmlProperty(body, 'failed.exception.message'),
+                    stackTrace: xmlProperty(body, 'failed.exception.stacktrace'),
+                ]
+            }
+        }
+        return records
+    }
+
+    private static String xmlElement(String body, String tag) {
+        def m = body =~ /(?s)<${tag}>(.*?)<\/${tag}>/
+        return m.find() ? unescapeXml(m.group(1)) : null
+    }
+
+    private static String xmlProperty(String body, String name) {
+        def m = body =~ /(?s)<property name="${java.util.regex.Pattern.quote(name)}">(.*?)<\/property>/
+        return m.find() ? unescapeXml(m.group(1)) : null
+    }
+
+    // Katalon escapes message text twice (e.g. &amp;quot;)
+    private static String unescapeXml(String text) {
+        String result = text
+        2.times {
+            result = result.replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"')
+                .replace('&apos;', "'").replace('&amp;', '&')
+        }
+        return result.trim()
     }
 
     /**
@@ -222,9 +382,21 @@ class AllureReportBridge {
         File stagingDir = new File(reportBaseDir, ".staging-${System.nanoTime()}")
         String allureCommand = resolveAllureCommand()
         try {
+            String version = allureVersion(allureCommand)
+            if (version && version.tokenize('.')[0].toInteger() >= 3) {
+                notice("Allure ${version} found (${allureCommand}). This bridge needs Allure 2 - install it with: npm install -g allure-commandline " +
+                    "(or point allure.commandline.path at an Allure 2 install). No HTML report generated; test results are in ${resultsDir.absolutePath}")
+                return
+            }
             reportBaseDir.mkdirs()
             boolean singleFile = AllureConfig.singleFileReport()
-            carryHistoryForward(reportBaseDir, resultsDir, singleFile)
+            String displayName = sanitizeForFilename(suiteName)
+            try {
+                carryHistoryForward(reportBaseDir, resultsDir, displayName)
+                numberLocalRun(resultsDir)
+            } catch (Throwable t) {
+                logger.logWarning("[Allure] Could not carry report history forward: ${t}")
+            }
 
             logger.logInfo('[Allure] Generating HTML report - this can take a few seconds, there is no separate progress indicator for it.')
             if (!runAllureGenerate(allureCommand, resultsDir, stagingDir, singleFile)) {
@@ -242,7 +414,6 @@ class AllureReportBridge {
             // ever protect against other threads in this same process.
             withRunLock(resultsDir) {
                 String timestamp = new java.text.SimpleDateFormat('yyyyMMdd_HHmmss').format(new Date())
-                String displayName = sanitizeForFilename(suiteName)
 
                 File finalTarget = singleFile ?
                     new File(reportBaseDir, "${displayName}_${timestamp}.html") :
@@ -279,10 +450,10 @@ class AllureReportBridge {
                 }
                 writeRunMarker(resultsDir, marker.runDir as String, finalTarget.absolutePath)
 
-                logger.logInfo("[Allure] HTML report ready: ${finalTarget.absolutePath}")
+                notice("HTML report ready: ${finalTarget.absolutePath}")
             }
         } catch (Throwable t) {
-            logger.logWarning("[Allure] Could not auto-generate the HTML report using '${allureCommand}' - install the Allure commandline (npm install -g allure-commandline), " +
+            notice("Could not auto-generate the HTML report using '${allureCommand}' - install the Allure commandline (npm install -g allure-commandline), " +
                 "point allure.commandline.path (Include/config/allure/allure.properties) or ALLURE_COMMANDLINE_PATH at its absolute path, or set allure.auto.generate.report=false. (${t.getMessage()})")
         } finally {
             if (stagingDir.exists()) {
@@ -304,16 +475,39 @@ class AllureReportBridge {
 
         if (!finished) {
             process.destroyForcibly()
-            logger.logWarning('[Allure] "allure generate" timed out after 90s - skipped.')
+            notice('"allure generate" timed out after 90s - skipped.')
             return false
         }
         if (process.exitValue() != 0) {
             String output = process.inputStream.getText('UTF-8')
-            logger.logWarning("[Allure] \"allure generate\" (using '${allureCommand}') failed - install the Allure commandline (npm install -g allure-commandline) or set allure.auto.generate.report=false. " +
+            notice("\"allure generate\" (using '${allureCommand}') failed - install the Allure commandline (npm install -g allure-commandline) or set allure.auto.generate.report=false. " +
                 "Output: ${output.take(500)}")
             return false
         }
         return true
+    }
+
+    /** e.g. "2.43.0", or null if 'allure --version' doesn't answer (not installed, not found). */
+    private static String allureVersion(String allureCommand) {
+        try {
+            boolean isWindows = System.getProperty('os.name', '').toLowerCase().contains('win')
+            List<String> command = isWindows ? ['cmd', '/c', allureCommand, '--version'] : [allureCommand, '--version']
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start()
+            if (!process.waitFor(30, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                return null
+            }
+            def m = process.inputStream.getText('UTF-8') =~ /\b(\d+)\.(\d+)\.(\d+)\b/
+            return process.exitValue() == 0 && m.find() ? m.group(0) : null
+        } catch (Throwable ignored) {
+            return null
+        }
+    }
+
+    /** KeywordLogger output from listener code never reaches the console, so anything the user must see is printed too. */
+    private static void notice(String message) {
+        System.out.println("[Allure] ${message}")
+        logger.logInfo("[Allure] ${message}")
     }
 
     /** Cached for the lifetime of this process - resolution below can shell out, and does not need to repeat per suite. */
@@ -367,7 +561,7 @@ class AllureReportBridge {
                 logger.logInfo("[Allure] Using configured allure.commandline.path: ${f.absolutePath}")
                 return f.absolutePath
             }
-            logger.logWarning("[Allure] allure.commandline.path is set to '${configured}' but that is not an existing, executable file - ignoring it and trying to auto-detect instead.")
+            notice("allure.commandline.path is set to '${configured}' but that is not an existing, executable file - ignoring it and trying to auto-detect instead.")
         }
 
         for (String candidate : commonAllureInstallLocations(isWindows)) {
@@ -462,12 +656,12 @@ class AllureReportBridge {
      * default behaviour, since it normally expects a fresh results
      * directory per CI build). Only deletes files matching Allure's own
      * naming convention (*-result.json, *-container.json, *-attachment*)
-     * - never touches history/, executor.json, or categories.json (all
-     * rewritten fresh below anyway), and never touches anything else a
-     * user might have placed in that folder. environment.properties is
-     * handled separately, right where this is called from - it's merged
-     * across a run's suites rather than simply rewritten, so a fresh run
-     * needs its own explicit reset instead of being covered here.
+     * - never touches executor.json or categories.json (both rewritten
+     * fresh below anyway), and never touches anything else a user might
+     * have placed in that folder. environment.properties and history/ are
+     * handled separately, right where this is called from - the first is
+     * merged across a run's suites rather than simply rewritten, and the
+     * second is only cleared when an earlier run used this folder.
      *
      * If you run multiple suites in true parallel against the same
      * allure-results directory, turn this off (allure.clean.results
@@ -843,18 +1037,14 @@ class AllureReportBridge {
     }
 
     /**
-     * Suffix appended to the "Suite" label Allure groups results by, for
-     * a suite with no browser to show (API/mobile-only) - see
-     * finishTestCase() for the WebUI case, which is handled separately
-     * once the test case's own browser use, if any, is actually known.
+     * Suffix appended to the "Suite" label Allure groups results by.
      *
      * Only added when this suite genuinely occurs more than once in the
      * current run - e.g. the same Collection member run twice. Without
      * one, two occurrences of "API Test Suite" would share one suite
      * label, and Allure's Suites view would merge them into what reads
      * as one suite holding every test case from both runs. A 1-based
-     * occurrence count is used here, since there's no browser to
-     * distinguish them by.
+     * occurrence count is used here; the browser goes in subSuite.
      *
      * The plan.jsonl path knows the total occurrence count upfront, so
      * every occurrence (including the first) gets suffixed together. The
@@ -1155,28 +1345,173 @@ class AllureReportBridge {
     }
 
     /**
-     * Copies history/ from the most recently generated report into
-     * allure-results/history so the new report's Trend/History graphs
-     * accumulate across runs. In single-file mode there's no report
-     * folder to read history back out of afterwards (it's embedded in the
-     * .html), so this only looks at prior folder-mode reports - which is
-     * fine, since carrying single-file history forward would need parsing
-     * it back out of the HTML, not worth the complexity for what trend
-     * graphs are for.
+     * Copies history/ from the previous report with the same name into
+     * allure-results/history. A single-file report has it embedded as
+     * base64 d('history/<file>','...') lines.
      */
-    private static void carryHistoryForward(File reportBaseDir, File resultsDir, boolean singleFile) {
-        if (singleFile || !reportBaseDir.exists()) {
+    private static void carryHistoryForward(File reportBaseDir, File resultsDir, String displayName) {
+        File previous = previousReport(reportBaseDir, displayName, readRunMarker(resultsDir).reportPath as String)
+        if (previous == null) {
             return
         }
-        File[] previousRuns = reportBaseDir.listFiles({ File f -> f.isDirectory() && !f.name.startsWith('.staging-') } as FileFilter)
-        if (!previousRuns) {
+        File historyDir = new File(resultsDir, 'history')
+        if (previous.isDirectory()) {
+            File previousHistory = new File(previous, 'history')
+            if (previousHistory.isDirectory()) {
+                FileUtils.deleteQuietly(historyDir)
+                FileUtils.copyDirectory(previousHistory, historyDir)
+            }
             return
         }
-        File mostRecent = previousRuns.max { it.lastModified() }
-        File previousHistory = new File(mostRecent, 'history')
-        if (previousHistory.isDirectory()) {
-            FileUtils.copyDirectory(previousHistory, new File(resultsDir, 'history'))
+        Map<String, byte[]> files = [:]
+        previous.withReader('UTF-8') { reader ->
+            reader.eachLine { String line ->
+                def m = line =~ /d\('history\/([\w.-]+\.json)','([A-Za-z0-9+\/=]*)'\)/
+                if (m.find()) {
+                    files[m.group(1)] = m.group(2).decodeBase64()
+                }
+            }
         }
+        if (files) {
+            FileUtils.deleteQuietly(historyDir)
+            historyDir.mkdirs()
+            files.each { name, bytes -> new File(historyDir, name).bytes = bytes }
+        }
+    }
+
+    /** Newest "<displayName>_<timestamp>" report, excluding one this run already made. */
+    private static File previousReport(File reportBaseDir, String displayName, String thisRunReport) {
+        String pattern = "${java.util.regex.Pattern.quote(displayName)}_\\d{8}_\\d{6}(\\.html)?"
+        File[] candidates = reportBaseDir.listFiles({ File f ->
+            f.name ==~ pattern && !(thisRunReport && f.absolutePath == new File(thisRunReport).absolutePath)
+        } as FileFilter)
+        return candidates ? candidates.max { it.name.replace('.html', '') } : null
+    }
+
+    /** Local runs have no build number, so continue from the last one in the trend. */
+    private static void numberLocalRun(File resultsDir) {
+        File executorFile = new File(resultsDir, 'executor.json')
+        if (!executorFile.isFile()) {
+            return
+        }
+        JsonObject executor = JsonParser.parseString(executorFile.text).getAsJsonObject()
+        if (executor.get('type')?.getAsString() != 'local') {
+            return
+        }
+        int last = 0
+        File trend = new File(resultsDir, 'history/history-trend.json')
+        if (trend.isFile()) {
+            JsonParser.parseString(trend.text).getAsJsonArray().each { entry ->
+                def order = entry.getAsJsonObject().get('buildOrder')
+                if (order != null && !order.isJsonNull()) {
+                    last = Math.max(last, order.getAsInt())
+                }
+            }
+        }
+        executor.addProperty('buildOrder', last + 1)
+        executorFile.text = new GsonBuilder().setPrettyPrinting().create().toJson(executor)
+    }
+
+    /** Paths already reported as unusable, so a bad plan is only mentioned once per process. */
+    private static final Set<String> reportedTestPlans = Collections.synchronizedSet(new HashSet<String>())
+
+    /** Matched by full name, Katalon test case id, or ALLURE_ID/AS_ID label; no usable plan means everything runs. */
+    private static boolean inTestPlan(TestResult result, String testCaseId) {
+        Map plan = testPlan()
+        if (plan == null) {
+            return true
+        }
+        Set<String> ids = result.getLabels().findAll { it.getName() in ['ALLURE_ID', 'AS_ID'] }*.getValue() as Set
+        return (plan.selectors as Set).any { it == result.getFullName() || it == testCaseId } ||
+            (plan.ids as Set).any { it in ids }
+    }
+
+    /** [ids, selectors] from the test plan file, or null when no plan applies. */
+    private static Map testPlan() {
+        String path = AllureConfig.testPlanPath()
+        if (!path || !AllureConfig.testPlanEnabled()) {
+            return null
+        }
+        try {
+            com.google.gson.JsonArray tests = JsonParser.parseString(new File(path).getText('UTF-8')).getAsJsonObject().getAsJsonArray('tests')
+            Set<String> ids = [] as Set, selectors = [] as Set
+            tests?.each {
+                JsonObject t = it.getAsJsonObject()
+                if (t.has('id') && !t.get('id').isJsonNull()) ids << t.get('id').getAsString()
+                if (t.has('selector') && !t.get('selector').isJsonNull()) selectors << t.get('selector').getAsString()
+            }
+            if (!ids && !selectors) {
+                if (reportedTestPlans.add(path)) {
+                    notice("Test plan ${path} lists no tests - running everything.")
+                }
+                return null
+            }
+            if (reportedTestPlans.add(path)) {
+                // TestOps lists each test with both an id and a selector, so count entries
+                notice("Test plan ${path}: running only the ${tests.size()} listed test(s).")
+            }
+            return [ids: ids, selectors: selectors]
+        } catch (Throwable t) {
+            if (reportedTestPlans.add(path)) {
+                notice("Test plan ${path} could not be read (${t.getMessage()}) - running everything.")
+            }
+            return null
+        }
+    }
+
+    /** New result with this run's identity and grouping; key is the test case id or '@SetUp'/'@TearDown'. */
+    private static TestResult newResult(String suiteName, String key, String name) {
+        String suiteLabel = "${suiteName}${suiteLabelSuffix(suiteName)}"
+        String collectionName = safeCall { resolveCollectionName(currentRunDir(), suiteName) }
+        if (collectionName == suiteName) {
+            collectionName = null
+        }
+        String browser = detectBrowser()
+        String executionId = ResultsUtils.md5("${suiteName}#${suiteOccurrenceDiscriminator(suiteName)}|${key}")
+
+        TestResult result = new TestResult()
+        result.setUuid(UUID.randomUUID().toString())
+        // Suite name + this suite's occurrence discriminator, not
+        // just the test case id alone - see suiteOccurrenceDiscriminator() for why.
+        // Two different suites can legitimately share a reusable test
+        // case (same testCaseId, different suite), and a Test Suite
+        // Collection can legitimately run the very same suite more than
+        // once - a plain testCaseId-only historyId collides in both
+        // cases, and Allure treats same-historyId results as retries of
+        // one logical test, silently collapsing every earlier one out
+        // of the default report view.
+        result.setHistoryId(executionId)
+        // newer Allure 2 groups retries by testCaseId, so it must be per suite run too
+        result.setTestCaseId(executionId)
+        result.setName(name)
+        result.setFullName([collectionName, suiteLabel, key].findAll { it }.join('/'))
+        // The visible "Suite" grouping, not historyId (already
+        // disambiguated above, independent of this) - see
+        // suiteLabelSuffix() for why this needs its own distinguishing
+        // suffix when the same suite runs more than once.
+        List labels = []
+        if (collectionName) {
+            labels << ResultsUtils.createParentSuiteLabel(collectionName)
+        }
+        labels << ResultsUtils.createSuiteLabel(suiteLabel)
+        if (browser) {
+            labels << ResultsUtils.createSubSuiteLabel(browser)
+            labels << ResultsUtils.createLabel('browser', browser)
+        }
+        String os = safeCall { RunConfiguration.getOS() }
+        if (os?.trim()) {
+            labels << ResultsUtils.createLabel('os', os)
+        }
+        labels.addAll([
+            ResultsUtils.createPackageLabel(key?.replace('/', '.') ?: 'UnknownTestCase'),
+            ResultsUtils.createHostLabel(),
+            ResultsUtils.createThreadLabel(),
+            ResultsUtils.createFrameworkLabel('Katalon Studio'),
+            ResultsUtils.createLanguageLabel('Groovy'),
+            ResultsUtils.createLabel('executionProfile', RunConfiguration.getExecutionProfile() ?: 'default'),
+        ])
+        result.setLabels(labels)
+        return result
     }
 
     static void startTestCase(TestCaseContext testCaseContext) {
@@ -1184,42 +1519,27 @@ class AllureReportBridge {
             if (!AllureConfig.isEnabled()) {
                 return
             }
+            // parallel (ISOLATED_PROCESS) test cases run in a process where startSuite() never ran
+            File resultsDir = AllureConfig.getResultsDir()
+            if (lifecycleResultsDir != resultsDir.absolutePath) {
+                resultsDir.mkdirs()
+                useResultsDir(resultsDir)
+            }
             String testCaseId = testCaseContext.getTestCaseId()
-            String uuid = UUID.randomUUID().toString()
-            String name = readableName(testCaseId)
             String suiteName = resolveSuiteNameQuiet() ?: currentSuiteName ?: 'Suite'
-
-            TestResult result = new TestResult()
-            result.setUuid(uuid)
-            // Suite name + this suite's occurrence discriminator, not
-            // just the test case id alone - see suiteOccurrenceDiscriminator() for why.
-            // Two different suites can legitimately share a reusable test
-            // case (same testCaseId, different suite), and a Test Suite
-            // Collection can legitimately run the very same suite more than
-            // once - a plain testCaseId-only historyId collides in both
-            // cases, and Allure treats same-historyId results as retries of
-            // one logical test, silently collapsing every earlier one out
-            // of the default report view.
-            result.setHistoryId(ResultsUtils.md5("${suiteName}#${suiteOccurrenceDiscriminator(suiteName)}|${testCaseId}"))
-            result.setTestCaseId(testCaseId)
-            result.setName(name)
-            result.setFullName(testCaseId)
+            TestResult result = newResult(suiteName, testCaseId, readableName(testCaseId))
+            String uuid = result.getUuid()
             result.setStart(System.currentTimeMillis())
             result.setStage(Stage.RUNNING)
             result.setStatus(Status.PASSED)
-            // The visible "Suite" grouping, not historyId (already
-            // disambiguated above, independent of this) - see
-            // suiteLabelSuffix() for why this needs its own distinguishing
-            // suffix when the same suite runs more than once.
-            result.setLabels([
-                ResultsUtils.createSuiteLabel("${suiteName}${suiteLabelSuffix(suiteName)}"),
-                ResultsUtils.createPackageLabel(testCaseId?.replace('/', '.') ?: 'UnknownTestCase'),
-                ResultsUtils.createHostLabel(),
-                ResultsUtils.createThreadLabel(),
-                ResultsUtils.createFrameworkLabel('Katalon Studio'),
-                ResultsUtils.createLanguageLabel('Groovy'),
-                ResultsUtils.createLabel('executionProfile', RunConfiguration.getExecutionProfile() ?: 'default'),
-            ])
+            addKatalonMetadata(result, testCaseId)
+
+            if (!inTestPlan(result, testCaseId)) {
+                // like other Allure integrations: not run, and left out of the report
+                testCaseContext.skipThisTestCase()
+                notice("Test plan: skipping ${result.getFullName()} (not in the plan)")
+                return
+            }
 
             Allure.getLifecycle().scheduleTestCase(uuid, result)
             Allure.getLifecycle().startTestCase(uuid)
@@ -1250,24 +1570,39 @@ class AllureReportBridge {
             if (shouldScreenshot) {
                 captureScreenshot(status == Status.PASSED ? 'Screenshot' : 'Screenshot on failure')
             }
+            if (status != Status.PASSED && AllureConfig.attachPageSourceOnFailure()) {
+                attachPageSource('Page source on failure')
+            }
+            if (AllureConfig.attachHttp()) {
+                attachHttpExchanges(uuid)
+            }
 
             // See detectActiveBrowser() - only known reliably now, after
             // the test body has actually run.
             String activeBrowser = detectActiveBrowser()
-            String suiteName = resolveSuiteNameQuiet() ?: currentSuiteName ?: 'Suite'
+
+            List<Parameter> variables = testCaseParameters(testCaseContext)
+            String device = mobileDeviceName()
 
             Allure.getLifecycle().updateTestCase(uuid, { TestResult tr ->
                 tr.setStatus(status)
                 tr.setStage(Stage.FINISHED)
                 tr.setStop(System.currentTimeMillis())
                 if (status != Status.PASSED && message) {
-                    StatusDetails details = new StatusDetails()
+                    // keeps flaky/muted/known set during the test
+                    StatusDetails details = tr.getStatusDetails() ?: new StatusDetails()
                     details.setMessage(firstLine(message))
                     details.setTrace(message)
                     tr.setStatusDetails(details)
                 }
-                if (activeBrowser) {
-                    tr.getLabels()?.find { it.getName() == 'suite' }?.setValue("${suiteName} (${activeBrowser})")
+                if (device && !tr.getLabels().any { it.getName() == 'device' }) {
+                    tr.getLabels().add(ResultsUtils.createLabel('device', device))
+                }
+                // ones set from the script with AllureKeywords.parameter() win
+                variables.each { Parameter p ->
+                    if (!tr.getParameters().any { it.getName() == p.getName() }) {
+                        tr.getParameters().add(p)
+                    }
                 }
             })
             if (activeBrowser) {
@@ -1291,6 +1626,168 @@ class AllureReportBridge {
         } catch (Throwable t) {
             logger.logWarning("[Allure] Failed to finish test case reporting: ${t}")
         }
+    }
+
+    /**
+     * Description and tags from the test case's .tc file, plus the suite's
+     * own .ts tags. "allure.label.<name>:<value>" tags become labels, any
+     * other tag becomes an Allure tag. A test case label beats the suite's.
+     */
+    private static void addKatalonMetadata(TestResult result, String testCaseId) {
+        try {
+            Map testCase = readKatalonFile(new File(RunConfiguration.getProjectDir(), "${testCaseId}.tc"))
+            String source = safeCall { RunConfiguration.getExecutionSource() }
+            Map suite = source?.toLowerCase()?.endsWith('.ts') ? readKatalonFile(new File(source)) : null
+            if (testCase?.description) {
+                result.setDescription(testCase.description as String)
+            }
+            List<String> testCaseTags = (testCase?.tags ?: []) as List<String>
+            List<String> suiteTags = (suite?.tags ?: []) as List<String>
+            applyTagMarkersAndLinks(result, testCaseTags + suiteTags)
+            List testCaseLabels = tagLabels(testCaseTags.findAll { !isMarkerOrLinkTag(it) })
+            Set<String> testCaseLabelNames = testCaseLabels*.getName().findAll { it != 'tag' } as Set
+            List suiteLabels = tagLabels(suiteTags.findAll { !isMarkerOrLinkTag(it) }).findAll { !(it.getName() in testCaseLabelNames) }
+            (testCaseLabels + suiteLabels).each { label ->
+                if (!result.getLabels().any { it.getName() == label.getName() && it.getValue() == label.getValue() }) {
+                    result.getLabels().add(label)
+                }
+            }
+        } catch (Throwable t) {
+            logger.logWarning("[Allure] Could not read Katalon description/tags: ${t}")
+        }
+    }
+
+    private static boolean isMarkerOrLinkTag(String tag) {
+        return tag ==~ /allure\.(flaky|muted|known)/ || tag ==~ /allure\.(issue|tms):.+/
+    }
+
+    /** allure.flaky/muted/known and allure.issue:<id>/allure.tms:<id> tags. */
+    private static void applyTagMarkersAndLinks(TestResult result, List<String> tags) {
+        tags.each { String tag ->
+            def marker = tag =~ /^allure\.(flaky|muted|known)$/
+            if (marker.matches()) {
+                setMarker(result, marker.group(1))
+                return
+            }
+            def link = tag =~ /^allure\.(issue|tms):(.+)$/
+            if (link.matches()) {
+                Link l = patternLink(link.group(1), link.group(2).trim())
+                if (l && !result.getLinks().any { it.getType() == l.getType() && it.getName() == l.getName() }) {
+                    result.getLinks().add(l)
+                }
+            }
+        }
+    }
+
+    private static void setMarker(TestResult result, String marker) {
+        if (result.getStatusDetails() == null) {
+            result.setStatusDetails(new StatusDetails())
+        }
+        switch (marker) {
+            case 'flaky': result.getStatusDetails().setFlaky(true); break
+            case 'muted': result.getStatusDetails().setMuted(true); break
+            case 'known': result.getStatusDetails().setKnown(true); break
+        }
+    }
+
+    /** For AllureKeywords.flaky()/muted()/known(). */
+    static void markCurrentTest(String marker) {
+        Allure.getLifecycle().updateTestCase({ TestResult tr -> setMarker(tr, marker) })
+    }
+
+    /** For AllureKeywords.issue(id)/tmsLink(id). */
+    static void addPatternLink(String type, String id) {
+        Link link = patternLink(type, id)
+        if (link) {
+            Allure.getLifecycle().updateTestCase({ TestResult tr -> tr.getLinks().add(link) })
+        }
+    }
+
+    /** Link from allure.link.<type>.pattern ("{}" is replaced by the id), or null if no pattern is set. */
+    private static Link patternLink(String type, String id) {
+        String pattern = AllureConfig.linkPattern(type)
+        if (!pattern) {
+            notice("allure.link.${type}.pattern is not set in allure.properties, so '${id}' can't be turned into a link.")
+            return null
+        }
+        Link link = new Link()
+        link.setName(id)
+        link.setType(type)
+        link.setUrl(pattern.replace('{}', id))
+        return link
+    }
+
+    private static List tagLabels(List<String> tags) {
+        return (tags ?: []).collect { String tag ->
+            def m = tag =~ /^allure\.label\.([^:]+):(.+)$/
+            m.matches() ? ResultsUtils.createLabel(m.group(1).trim(), m.group(2).trim()) : ResultsUtils.createTagLabel(tag)
+        }
+    }
+
+    /** Test case variables as parameters; ones marked masked in Katalon never have their value written. */
+    private static List<Parameter> testCaseParameters(TestCaseContext testCaseContext) {
+        try {
+            Map<String, Object> variables = testCaseContext.getTestCaseVariables()
+            if (!variables) {
+                return []
+            }
+            Map testCase = readKatalonFile(new File(RunConfiguration.getProjectDir(), "${testCaseContext.getTestCaseId()}.tc"))
+            Set<String> masked = (testCase?.masked ?: []) as Set
+            return variables.collect { String name, Object value ->
+                Parameter p = new Parameter()
+                p.setName(name)
+                if (name in masked) {
+                    p.setValue('******')
+                    p.setMode(Parameter.Mode.MASKED)
+                } else {
+                    p.setValue(String.valueOf(value))
+                }
+                return p
+            }
+        } catch (Throwable t) {
+            logger.logWarning("[Allure] Could not read test case variables: ${t}")
+            return []
+        }
+    }
+
+    /** description, tags and masked variable names from a .tc/.ts file, or null. */
+    private static Map readKatalonFile(File file) {
+        try {
+            if (!file.isFile()) {
+                return null
+            }
+            def factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+            factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+            org.w3c.dom.Element root = factory.newDocumentBuilder().parse(file).getDocumentElement()
+            List<String> masked = []
+            childElements(root, 'variable').each { org.w3c.dom.Element variable ->
+                if (childText(variable, 'masked') == 'true') {
+                    masked << childText(variable, 'name')
+                }
+            }
+            return [
+                description: childText(root, 'description'),
+                tags: (childText(root, 'tag') ?: '').split(',')*.trim().findAll { it },
+                masked: masked,
+            ]
+        } catch (Throwable ignored) {
+            return null
+        }
+    }
+
+    private static List<org.w3c.dom.Element> childElements(org.w3c.dom.Element parent, String tag) {
+        List<org.w3c.dom.Element> found = []
+        for (org.w3c.dom.Node n = parent.getFirstChild(); n != null; n = n.getNextSibling()) {
+            if (n instanceof org.w3c.dom.Element && ((org.w3c.dom.Element) n).getTagName() == tag) {
+                found << (org.w3c.dom.Element) n
+            }
+        }
+        return found
+    }
+
+    private static String childText(org.w3c.dom.Element parent, String tag) {
+        List<org.w3c.dom.Element> found = childElements(parent, tag)
+        return found ? found[0].getTextContent()?.trim() : null
     }
 
     /**
@@ -1530,13 +2027,74 @@ class AllureReportBridge {
             return
         }
         JsonObject resultJson = JsonParser.parseString(resultFile.text).getAsJsonObject()
-        resultJson.add('steps', stepsToJsonArray(steps))
+        // keep manual steps written by AllureKeywords.step()
+        List<JsonObject> manualSteps = []
+        if (resultJson.has('steps') && resultJson.get('steps').isJsonArray()) {
+            resultJson.getAsJsonArray('steps').each { if (it.isJsonObject()) manualSteps << it.getAsJsonObject() }
+        }
+        copyStepAttachments(steps, resultsDir)
+        List<JsonObject> merged = jsonArrayToList(stepsToJsonArray(steps, manualSteps))
+        // unmatched ones (e.g. Allure.step() called directly) go back in by start time
+        manualSteps.each { leftover ->
+            long leftoverStart = stepStart(leftover)
+            int index = merged.findIndexOf { stepStart(it) > leftoverStart }
+            merged.add(index >= 0 ? index : merged.size(), leftover)
+        }
+        com.google.gson.JsonArray mergedArray = new com.google.gson.JsonArray()
+        merged.each { mergedArray.add(it) }
+        resultJson.add('steps', mergedArray)
         resultFile.text = new GsonBuilder().create().toJson(resultJson)
     }
 
-    private static com.google.gson.JsonArray stepsToJsonArray(List<StepResult> steps) {
+    private static List<JsonObject> jsonArrayToList(com.google.gson.JsonArray array) {
+        List<JsonObject> list = []
+        array.each { list << it.getAsJsonObject() }
+        return list
+    }
+
+    private static long stepStart(JsonObject step) {
+        try {
+            return step.has('start') ? step.get('start').getAsLong() : Long.MAX_VALUE
+        } catch (Throwable ignored) {
+            return Long.MAX_VALUE
+        }
+    }
+
+    /** Match by name, else by closest start time (within 2s). */
+    private static JsonObject takeManualStep(List<JsonObject> manualSteps, ManualStepPlaceholder placeholder) {
+        int index = placeholder.manualName ?
+            manualSteps.findIndexOf { it.has('name') && it.get('name').getAsString() == placeholder.manualName } : -1
+        if (index < 0 && placeholder.getStart() != null) {
+            long logStart = placeholder.getStart()
+            long bestDistance = 2000L
+            manualSteps.eachWithIndex { JsonObject candidate, int i ->
+                long distance = Math.abs(stepStart(candidate) - logStart)
+                if (distance <= bestDistance) {
+                    bestDistance = distance
+                    index = i
+                }
+            }
+        }
+        return index >= 0 ? manualSteps.remove(index) : null
+    }
+
+    private static com.google.gson.JsonArray stepsToJsonArray(List<StepResult> steps, List<JsonObject> manualSteps) {
         com.google.gson.JsonArray array = new com.google.gson.JsonArray()
         steps.each { step ->
+            if (step instanceof ManualStepPlaceholder) {
+                JsonObject manual = takeManualStep(manualSteps, (ManualStepPlaceholder) step)
+                if (manual != null) {
+                    List<StepResult> loggedChildren = (step.getSteps() ?: []).findAll { !(it instanceof ManualStepPlaceholder) }
+                    if (loggedChildren) {
+                        com.google.gson.JsonArray children = manual.has('steps') && manual.get('steps').isJsonArray() ?
+                            manual.getAsJsonArray('steps') : new com.google.gson.JsonArray()
+                        stepsToJsonArray(loggedChildren, []).each { children.add(it) }
+                        manual.add('steps', children)
+                    }
+                    array.add(manual)
+                    return
+                }
+            }
             JsonObject obj = new JsonObject()
             obj.addProperty('name', step.getName())
             obj.addProperty('status', (step.getStatus() ?: Status.PASSED).toString().toLowerCase())
@@ -1552,8 +2110,16 @@ class AllureReportBridge {
             if (step.getStop() != null) {
                 obj.addProperty('stop', step.getStop())
             }
-            obj.add('steps', stepsToJsonArray(step.getSteps() ?: []))
-            obj.add('attachments', new com.google.gson.JsonArray())
+            obj.add('steps', stepsToJsonArray(step.getSteps() ?: [], manualSteps))
+            com.google.gson.JsonArray attachments = new com.google.gson.JsonArray()
+            step.getAttachments()?.findAll { it.getSource() && !new File(it.getSource()).isAbsolute() }?.each { Attachment a ->
+                JsonObject att = new JsonObject()
+                att.addProperty('name', a.getName())
+                att.addProperty('source', a.getSource())
+                att.addProperty('type', a.getType())
+                attachments.add(att)
+            }
+            obj.add('attachments', attachments)
             obj.add('parameters', new com.google.gson.JsonArray())
             array.add(obj)
         }
@@ -1599,7 +2165,7 @@ class AllureReportBridge {
             diag << "  no TestCaseLogRecord matched testCaseId='${testCaseId}' - found names=${testCases.collect { it.getName() }}\n"
             return []
         }
-        return convertLogRecordsToSteps(match.getChildRecords())
+        return convertLogRecordsToSteps(match.getChildRecords(), new File(logFolder))
     }
 
     /**
@@ -1618,14 +2184,19 @@ class AllureReportBridge {
         return recordName == testCaseId || recordName.endsWith(testCaseId) || testCaseId.endsWith(recordName)
     }
 
+    /** Position of an AllureKeywords.step() call in the log tree. */
+    private static class ManualStepPlaceholder extends StepResult {
+        String manualName
+    }
+
     /**
      * This library's own listener actions (AllureReportBridge.*,
-     * AllureKeywords.*) are filtered out; every other TestStepLogRecord
+     * AllureKeywords.* except step()) are filtered out; every other TestStepLogRecord
      * (Katalon's own model of one logged keyword call, already correctly
      * nested by Katalon's own parser) becomes one Allure step, recursively.
      */
     @SuppressWarnings('deprecation')
-    private static List<StepResult> convertLogRecordsToSteps(ILogRecord[] records) {
+    private static List<StepResult> convertLogRecordsToSteps(ILogRecord[] records, File logDir) {
         List<StepResult> result = []
         if (!records) {
             return result
@@ -1635,11 +2206,19 @@ class AllureReportBridge {
                 return
             }
             String name = rec.getName()
-            if (isInternalStepName(name)) {
+            boolean manualStepCall = isManualStepCall(name)
+            if (!manualStepCall && isInternalStepName(name)) {
                 return
             }
-            StepResult step = new StepResult()
-            step.setName(name)
+            StepResult step
+            if (manualStepCall) {
+                String manualName = manualStepNameFromCall(name)
+                step = new ManualStepPlaceholder(manualName: manualName)
+                step.setName(manualName ?: name)
+            } else {
+                step = new StepResult()
+                step.setName(name)
+            }
             step.setStart(rec.getStartTime())
             step.setStop(rec.getEndTime() > 0 ? rec.getEndTime() : rec.getStartTime())
             TestStatus.TestStatusValue statusValue = rec.getStatus()?.getStatusValue()
@@ -1649,10 +2228,52 @@ class AllureReportBridge {
                 details.setMessage(rec.getMessage())
                 step.setStatusDetails(details)
             }
-            step.setSteps(convertLogRecordsToSteps(rec.getChildRecords()))
+            step.setSteps(convertLogRecordsToSteps(rec.getChildRecords(), logDir))
+            step.getAttachments().addAll(stepScreenshots((TestStepLogRecord) rec, logDir))
+            if (isEmptyPassedListenerAction(step)) {
+                return
+            }
             result << step
         }
         return result
+    }
+
+    /** Screenshots Katalon took for this step (e.g. at the moment it failed), next to its log file. */
+    @SuppressWarnings('deprecation')
+    private static List<Attachment> stepScreenshots(TestStepLogRecord rec, File logDir) {
+        List<String> names = [rec.getAttachment()]
+        rec.getChildRecords()?.each { child ->
+            if (child instanceof MessageLogRecord) {
+                names << ((MessageLogRecord) child).getAttachment()
+            }
+        }
+        return names.findAll { it && it ==~ /(?i).*\.(png|jpe?g)$/ }.unique().collect { String name ->
+            File file = new File(name).isAbsolute() ? new File(name) : new File(logDir, name)
+            if (!file.isFile()) {
+                return null
+            }
+            Attachment attachment = new Attachment()
+            attachment.setName('Screenshot')
+            attachment.setType(name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg')
+            attachment.setSource(file.absolutePath)
+            return attachment
+        }.findAll { it != null }
+    }
+
+    /** Copies step screenshots into resultsDir, as Allure expects attachments to sit next to the results. */
+    private static void copyStepAttachments(List<StepResult> steps, File resultsDir) {
+        steps?.each { StepResult step ->
+            step.getAttachments()?.each { Attachment attachment ->
+                File source = new File(attachment.getSource())
+                if (source.isAbsolute() && source.isFile()) {
+                    String ext = source.name.substring(source.name.lastIndexOf('.'))
+                    String copyName = "${UUID.randomUUID()}-attachment${ext}"
+                    FileUtils.copyFile(source, new File(resultsDir, copyName))
+                    attachment.setSource(copyName)
+                }
+            }
+            copyStepAttachments(step.getSteps(), resultsDir)
+        }
     }
 
     private static Status mapTestStatusValue(TestStatus.TestStatusValue value) {
@@ -1670,16 +2291,209 @@ class AllureReportBridge {
         return stepName != null && (stepName.contains('AllureReportBridge.') || stepName.contains('AllureKeywords.'))
     }
 
+    /** Hides listener actions with nothing in them (ours, plugins); failed ones are kept. */
+    private static boolean isEmptyPassedListenerAction(StepResult step) {
+        return step.getName()?.startsWith('Start listener action') &&
+            !step.getSteps() &&
+            step.getStatus() == Status.PASSED
+    }
+
+    // logged as: allure.AllureKeywords.step("Log in", { -> ... })
+    private static boolean isManualStepCall(String stepName) {
+        return stepName != null && stepName.contains('AllureKeywords.step(')
+    }
+
+    private static String manualStepNameFromCall(String stepName) {
+        def matcher = stepName =~ /AllureKeywords\.step\("((?:[^"\\]|\\.)*)"/
+        return matcher.find() ? matcher.group(1).replace('\\"', '"').replace('\\\\', '\\') : null
+    }
+
     /** Exposed for AllureKeywords.attachScreenshot() so tests can capture ad-hoc evidence too. */
     static void captureScreenshot(String name) {
         try {
-            WebDriver driver = DriverFactory.getWebDriver()
+            def driver = activeDriver()?.driver
             if (driver instanceof TakesScreenshot) {
                 byte[] bytes = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES)
                 Allure.getLifecycle().addAttachment(name, 'image/png', '.png', bytes)
             }
         } catch (Throwable ignored) {
-            // No active WebUI driver (API/mobile-only test, or driver already closed) - skip silently
+            // No open browser or mobile session (API-only test, or driver already closed) - skip silently
+        }
+    }
+
+    private static final String MASK = '******'
+
+    private static final String SENSITIVE = '(?:passw(?:or)?d|passphrase|pwd|secret|token|api[-_]?key|authorization|credential|cookie|session[-_]?id|private[-_]?key)'
+
+    private static final int MAX_BODY_CHARS = 100000
+
+    /**
+     * One attachment per API request sent during this test case, from the
+     * .har files Katalon writes under <report folder>/requests/. Secrets
+     * (auth headers, cookies, password/token fields) are always masked.
+     */
+    private static void attachHttpExchanges(String uuid) {
+        try {
+            long start = 0
+            Allure.getLifecycle().updateTestCase(uuid, { TestResult tr -> start = tr.getStart() ?: 0 })
+            String reportFolder = safeCall { RunConfiguration.getReportFolder() }
+            File requestsDir = reportFolder ? new File(reportFolder, 'requests') : null
+            if (!requestsDir?.isDirectory()) {
+                return
+            }
+            long now = System.currentTimeMillis()
+            List<JsonObject> entries = []
+            requestsDir.eachFileRecurse { File f ->
+                if (f.name.endsWith('.har')) {
+                    try {
+                        JsonParser.parseString(f.getText('UTF-8')).getAsJsonObject().getAsJsonObject('log').getAsJsonArray('entries').each {
+                            entries << it.getAsJsonObject()
+                        }
+                    } catch (Throwable ignored) { }
+                }
+            }
+            entries.collect { [entry: it, at: harTime(it)] }
+                .findAll { it.at != null && it.at >= start && it.at <= now }
+                .sort { it.at }
+                .each { Map e -> attachHttpExchange(e.entry as JsonObject) }
+        } catch (Throwable t) {
+            logger.logWarning("[Allure] Could not attach API requests: ${t}")
+        }
+    }
+
+    private static Long harTime(JsonObject entry) {
+        try {
+            return java.time.Instant.parse(entry.get('startedDateTime').getAsString()).toEpochMilli()
+        } catch (Throwable ignored) {
+            return null
+        }
+    }
+
+    private static void attachHttpExchange(JsonObject entry) {
+        JsonObject request = entry.getAsJsonObject('request')
+        JsonObject response = entry.getAsJsonObject('response')
+        String method = request.get('method')?.getAsString()
+        String url = request.get('url')?.getAsString() ?: ''
+        String status = response?.get('status')?.getAsString() ?: '?'
+
+        JsonObject req = new JsonObject()
+        req.addProperty('method', method)
+        req.addProperty('url', maskText(url))
+        req.add('headers', harHeaders(request))
+        req.add('body', body(request.getAsJsonObject('postData')?.get('text')?.getAsString(), null))
+
+        JsonObject res = new JsonObject()
+        res.addProperty('status', status)
+        res.add('headers', harHeaders(response))
+        JsonObject content = response?.getAsJsonObject('content')
+        res.add('body', body(content?.get('text')?.getAsString(), content?.get('encoding')?.getAsString()))
+
+        JsonObject exchange = new JsonObject()
+        exchange.add('request', req)
+        exchange.add('response', res)
+        if (entry.has('time')) {
+            exchange.addProperty('durationMs', entry.get('time').getAsLong())
+        }
+        String name = "${method} ${url.replaceAll(/\?.*$/, '')} -> ${status}"
+        String json = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(exchange)
+        Allure.getLifecycle().addAttachment(name, 'application/json', '.json', json.getBytes('UTF-8'))
+    }
+
+    private static com.google.gson.JsonArray harHeaders(JsonObject message) {
+        com.google.gson.JsonArray headers = new com.google.gson.JsonArray()
+        message?.getAsJsonArray('headers')?.each {
+            JsonObject h = it.getAsJsonObject()
+            String name = h.get('name')?.getAsString()
+            headers.add("${name}: ${name ==~ /(?i).*${SENSITIVE}.*/ ? MASK : h.get('value')?.getAsString()}".toString())
+        }
+        return headers
+    }
+
+    /** JSON bodies are masked field by field; anything else as text (form fields, XML elements). */
+    private static com.google.gson.JsonElement body(String text, String encoding) {
+        if (text == null || text.isEmpty()) {
+            return com.google.gson.JsonNull.INSTANCE
+        }
+        if (encoding == 'base64') {
+            return new com.google.gson.JsonPrimitive("(binary, ${(text.length() * 3).intdiv(4)} bytes)".toString())
+        }
+        try {
+            com.google.gson.JsonElement parsed = JsonParser.parseString(text)
+            if (parsed.isJsonObject() || parsed.isJsonArray()) {
+                com.google.gson.JsonElement masked = maskJson(parsed)
+                return masked.toString().length() <= MAX_BODY_CHARS ? masked :
+                    new com.google.gson.JsonPrimitive(masked.toString().take(MAX_BODY_CHARS) + ' ... (truncated)')
+            }
+        } catch (Throwable ignored) { }
+        String masked = maskText(text)
+        return new com.google.gson.JsonPrimitive(masked.length() <= MAX_BODY_CHARS ? masked : masked.take(MAX_BODY_CHARS) + ' ... (truncated)')
+    }
+
+    private static com.google.gson.JsonElement maskJson(com.google.gson.JsonElement element) {
+        if (element.isJsonObject()) {
+            JsonObject masked = new JsonObject()
+            element.getAsJsonObject().entrySet().each { e ->
+                masked.add(e.key, e.key ==~ /(?i).*${SENSITIVE}.*/ && !e.value.isJsonNull() ?
+                    new com.google.gson.JsonPrimitive(MASK) : maskJson(e.value))
+            }
+            return masked
+        }
+        if (element.isJsonArray()) {
+            com.google.gson.JsonArray masked = new com.google.gson.JsonArray()
+            element.getAsJsonArray().each { masked.add(maskJson(it)) }
+            return masked
+        }
+        return element
+    }
+
+    /** key=value pairs (query strings, form bodies) and <key>value</key> elements with sensitive names. */
+    private static String maskText(String text) {
+        return text
+            .replaceAll(/(?i)([?&;\s]|^)([^=&?;\s]*${SENSITIVE}[^=&?;\s]*)=([^&;\s]*)/, '$1$2=' + MASK)
+            .replaceAll(/(?is)<([\w:.-]*${SENSITIVE}[\w:.-]*)(\s[^>]*)?>[^<]*<\/\1>/, '<$1$2>' + MASK + '</$1>')
+    }
+
+    /** Device name of the open mobile (Appium) session, or null for web/API tests. */
+    private static String mobileDeviceName() {
+        try {
+            Map active = activeDriver()
+            if (!active?.mobile) {
+                return null
+            }
+            def caps = active.driver.getCapabilities()
+            def name = caps.getCapability('deviceName') ?: caps.getCapability('appium:deviceName') ?: caps.getCapability('udid')
+            return name?.toString()?.trim() ?: null
+        } catch (Throwable ignored) {
+            return null
+        }
+    }
+
+    /** HTML of the open page, or the XML view hierarchy of the open mobile app. */
+    private static void attachPageSource(String name) {
+        try {
+            Map active = activeDriver()
+            String source = active?.driver?.getPageSource()
+            if (source) {
+                boolean mobile = active.mobile
+                Allure.getLifecycle().addAttachment(name, mobile ? 'text/xml' : 'text/html', mobile ? '.xml' : '.html', source.getBytes('UTF-8'))
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    /** [driver, mobile] for the open WebUI browser, else the open mobile (Appium) session, else null. */
+    private static Map activeDriver() {
+        try {
+            WebDriver web = DriverFactory.getWebDriver()
+            if (web != null) {
+                return [driver: web, mobile: false]
+            }
+        } catch (Throwable ignored) { }
+        try {
+            // reflection keeps this working on projects without the mobile plugin loaded
+            def mobile = Class.forName('com.kms.katalon.core.mobile.keyword.internal.MobileDriverFactory').getMethod('getDriver').invoke(null)
+            return mobile != null ? [driver: mobile, mobile: true] : null
+        } catch (Throwable ignored) {
+            return null
         }
     }
 
@@ -1823,10 +2637,9 @@ RunConfiguration.getExecutedEntity()             = '${executedEntity}'
      *
      * Browser is deliberately not one of the keys written here: this runs
      * at suite start, before any test case has actually run, so the only
-     * "browser" available yet is the Run Configuration's configured one -
-     * the same value that turned out to be misleading for the "Suite"
-     * label (see detectActiveBrowser()), since a suite can have one
-     * configured without ever opening it. recordActiveBrowserInEnvironment()
+     * "browser" available yet is the Run Configuration's configured one,
+     * and a suite can have one configured without ever opening it
+     * (see detectActiveBrowser()). recordActiveBrowserInEnvironment()
      * merges Browser in separately, from finishTestCase(), only once a
      * browser is confirmed actually open.
      */

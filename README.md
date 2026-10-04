@@ -192,7 +192,7 @@ package solves all of them:
 
 - Katalon Studio (tested on 11.4.0 locally and 11.3.0 in CI; uses only long-stable public APIs)
 - Windows or macOS to use the double-click installer as-is; Linux works via `Linux/install.sh` in a terminal (PowerShell/bash ship with the OS either way - nothing extra to install for the installer itself)
-- [Allure commandline](https://allurereport.org/docs/install/) installed (`npm install -g allure-commandline`) - used to auto-generate the HTML report after each suite and to view it. The bridge auto-detects it (PATH, common install locations, or your login shell on macOS/Linux - see Troubleshooting below); if it still can't find it, set `allure.commandline.path` or the bridge logs one warning and otherwise behaves normally (raw `allure-results/` JSON still gets written either way)
+- [Allure 2 commandline](https://allurereport.org/docs/install/) installed (`npm install -g allure-commandline`) - used to auto-generate the HTML report after each suite and to view it. Allure 3 (what `npm install -g allure` installs) is not supported yet - the bridge detects it and says so in the console instead of generating. The bridge auto-detects the commandline (PATH, common install locations, or your login shell on macOS/Linux - see Troubleshooting below); if it still can't find it, set `allure.commandline.path` or the bridge prints one warning to the console and otherwise behaves normally (raw `allure-results/` JSON still gets written either way)
 
 Verified end-to-end on Azure Pipelines, GitHub Actions, and GitLab CI - see [CI setup](#ci-setup) below for a ready-to-copy config for each.
 
@@ -214,8 +214,8 @@ Uninstall removes exactly what's in the manifest; `allure-results/`
 Test Listeners/AllureTestListener.groovy      auto-discovered by Katalon - the only wiring needed
 Keywords/allure/AllureReportBridge.groovy     engine: status mapping, attachments, environment/executor/categories files
 Keywords/allure/AllureConfig.groovy           allure.properties reader, with ALLURE_* env var overrides
-Keywords/allure/AllureKeywords.groovy         optional: step(), attachText/Json/Html/File/Screenshot, epic/feature/story/severity/label/link/issue/tmsLink/parameter
-Include/config/allure/allure.properties       configuration (results dir, screenshot policy)
+Keywords/allure/AllureKeywords.groovy         optional: step(), attachText/Json/Html/File/Screenshot, epic/feature/story/severity/label/link/issue/tmsLink/parameter, flaky/muted/known
+Include/config/allure/allure.properties       configuration - every key is described in the file and under Configuration below
 Include/config/allure/categories.json         failure categorization tuned to Katalon/Selenium exception types
 Drivers/allure-java-commons-2.35.4.jar        Apache-2.0, Qameta Software - the only 2 extra jars needed
 Drivers/allure-model-2.35.4.jar
@@ -245,12 +245,13 @@ local `http://` server instead.
 
 **Zero-touch (default):** every test suite run automatically produces one
 Allure result per test case - status, timing, a failure screenshot
-(WebUI only) and stack trace on failure, suite/host/thread/framework
+(WebUI or Mobile) and stack trace on failure, suite/host/thread/framework
 labels, and a stable history ID so retries and repeat runs show up as
 history/trend in the report. A self-contained `allure-report/<Name>_
 <timestamp>.html` is generated automatically too, at the end of the run
 (requires the Allure commandline to be installed and found - see Requirements), with the
-Trend/History graphs carried forward from the previous run.
+Trend/History graphs carried forward from the previous run of the same
+suite or collection.
 
 `<Name>` is whatever you actually ran:
 
@@ -265,16 +266,21 @@ Trend/History graphs carried forward from the previous run.
 - **A lone Test Case** run directly, no saved suite involved -> named
   after that test case.
 
-A Test Suite that actually opens a browser shows it right in its name in
-the Suites view (e.g. `API Test Suite (Chrome)`), and the Environment
-panel lists every browser actually used across the run (e.g.
-`Chrome, Firefox`) instead of just whichever suite happened to start
-last. A suite that never opens a browser - an API-only test case, say,
-even one sharing a Run Configuration that has a browser nominally
-selected - doesn't get one shown, since it never actually used it. If a
+The Suites view groups results as Collection > Test Suite > browser
+(the browser selected in the Run Configuration), e.g.
+`Regression > Login Suite > Chrome`. Each test also carries `browser`,
+`os` and (for mobile runs) `device` labels, and a failed step shows the
+screenshot Katalon took at the moment it failed. The Environment panel lists every
+browser actually opened across the run (e.g. `Chrome, Firefox`). If a
 Collection runs the same Test Suite more than once - same browser or
-different - each occurrence shows up as its own entry instead of being
-merged into one.
+different - each run shows up as its own entry (`Login Suite
+(occurrence 1)`, `Login Suite (occurrence 2)`) instead of being merged
+into one, and a test case reused across suites is reported once per
+suite, not as retries of one test.
+
+If a suite's `@SetUp` or `@TearDown` fails, the report shows it as a
+broken result with the exception and stack trace - Katalon runs no test
+cases when `@SetUp` fails, so without this the report would just be empty.
 
 Each report reflects only the run it's named after - `allure-results/` is
 cleared of unrelated earlier runs at the start of a suite (see
@@ -294,24 +300,100 @@ CustomKeywords.'allure.AllureKeywords.epic'('Patient Management')
 CustomKeywords.'allure.AllureKeywords.attachJson'('Booking payload', responsePayload)
 ```
 
+**From Katalon's own fields, no code:** a Test Case's **Description**
+becomes the report description, and its **Variables** become parameters
+(variables marked masked show as `******` - the value is never written).
+In the **Tag** field of a Test Case or Test Suite, `allure.label.<name>:<value>`
+becomes a label and any other tag becomes an Allure tag, e.g.:
+
+```
+allure.label.owner:monty, allure.label.severity:critical, allure.label.epic:Patient Management, smoke
+```
+
+Suite tags apply to every test in the suite; a test case's own label wins
+over the suite's.
+
+**Markers and short links:** `allure.flaky`, `allure.muted` and
+`allure.known` tags (or `AllureKeywords.flaky()` / `muted()` / `known()`)
+flag a test. The Allure 2 report shows the flaky marker; muted and known
+are recorded for tools that read them (Allure TestOps, Allure 3). With `allure.link.issue.pattern` /
+`allure.link.tms.pattern` set in `allure.properties`, `issue('BUG-12')`,
+`tmsLink('TC-34')` or the tags `allure.issue:BUG-12` / `allure.tms:TC-34`
+become full links.
+
+**Rerun selected tests (Allure TestOps):** when a test plan is given
+(`ALLURE_TESTPLAN_PATH`, set by Allure TestOps when you rerun selected
+tests, or `allure.testplan.path`), only the test cases it lists run -
+matched by full name, Katalon test case id (`Test Cases/Checkout`) or an
+`allure.label.ALLURE_ID:<id>` tag - and the rest are skipped and left out
+of the report. Without a plan everything runs as usual;
+`allure.testplan.enabled=false` ignores plans altogether. See
+[Allure TestOps](#allure-testops) for the full setup. TestOps writes the
+plan file itself; a hand-written one looks like this:
+
+```json
+{
+  "version": "1.0",
+  "tests": [
+    { "selector": "Test Cases/Checkout" },
+    { "id": "42" }
+  ]
+}
+```
+
+**On failure** a test case gets a screenshot and the page source (HTML for
+WebUI, the app's XML view hierarchy for Mobile) attached automatically.
+
+**API tests** get one attachment per request sent (`POST https://… -> 200`)
+with the request and response headers and bodies, taken from the `.har`
+files Katalon already writes. Authorization headers, cookies and fields
+named like password/token/secret/apikey are always shown as `******`.
+
 ## Configuration
 
 Edit `Include/config/allure/allure.properties` in the target project, or
 override any key per environment with `ALLURE_<KEY_IN_UPPER_SNAKE_CASE>`
-(e.g. `allure.results.dir` -> `ALLURE_RESULTS_DIR`):
+(e.g. `allure.results.dir` -> `ALLURE_RESULTS_DIR`). An environment
+variable wins over the file. Overrides also reach suites run with
+**Enable Parallel Execution** (whose test cases Katalon starts in separate
+processes) - the bridge saves them for the run when the suite starts.
+
+**General**
 
 | Key | Default | Meaning |
 |---|---|---|
-| `allure.enabled` | `true` | Master switch |
-| `allure.results.dir` | `allure-results` | Relative to project root, or absolute |
-| `allure.clean.results.before.run` | `true` | Clear last run's results before each suite starts, so a report only shows the run it's named after. Set `false` if you run suites in true parallel against the same results folder |
-| `allure.attach.screenshot.on.failure` | `true` | Screenshot on any non-PASSED status (WebUI only) |
-| `allure.attach.screenshot.always` | `false` | Screenshot on every test case |
+| `allure.enabled` | `true` | Master switch - `false` turns all reporting off |
+| `allure.results.dir` | `allure-results` | Where the raw Allure results go. Relative to the project root, or absolute |
+| `allure.clean.results.before.run` | `true` | Clear the previous run's results (and its history copy) when a new run starts, so a report only shows the run it's named after. Suites of one Test Suite Collection are never cleared between each other. Set `false` if you run unrelated suites in true parallel against the same results folder |
+
+**Report**
+
+| Key | Default | Meaning |
+|---|---|---|
+| `allure.auto.generate.report` | `true` | Run `allure generate` (Allure 2) when the run finishes. Set `false` if your CI generates the report itself |
+| `allure.report.dir` | `allure-report` | Where generated reports go; each run writes its own `<Name>_<timestamp>` here. History and trend carry over from the previous report with the same name |
+| `allure.report.single.file` | `true` | One self-contained `.html` per run (double-click to open, no server). `false` writes a `<Name>_<timestamp>/` folder instead - only worth it for very large suites |
+| `allure.commandline.path` | *(auto-detected)* | Absolute path to the Allure 2 `allure` executable, only needed if auto-detection doesn't find it - see Troubleshooting below |
 | `allure.categories.file` | `Include/config/allure/categories.json` | Failure categorization template |
-| `allure.auto.generate.report` | `true` | Auto-run `allure generate` at the end of every suite. Set `false` if your CI already does this itself |
-| `allure.report.dir` | `allure-report` | Base folder for generated reports; each run writes its own `<Name>_<timestamp>` here |
-| `allure.report.single.file` | `true` | One self-contained `.html` per run (double-click to open, no server). Set `false` for a `<Name>_<timestamp>/` folder instead - only worth it for very large suites |
-| `allure.commandline.path` | *(auto-detected)* | Absolute path to the `allure` executable, only needed if auto-detection doesn't find it - see Troubleshooting below |
+
+**What each test case gets**
+
+| Key | Default | Meaning |
+|---|---|---|
+| `allure.capture.steps` | `true` | Turn Katalon's own execution log into nested Allure steps (with the screenshot Katalon took on a failed step). Manual `AllureKeywords.step()` calls are kept either way |
+| `allure.attach.screenshot.on.failure` | `true` | Screenshot when a test case doesn't pass (WebUI or Mobile) |
+| `allure.attach.screenshot.always` | `false` | Screenshot on every test case |
+| `allure.attach.page.source.on.failure` | `true` | Page HTML (WebUI) or view hierarchy XML (Mobile) when a test case doesn't pass |
+| `allure.attach.http` | `true` | One attachment per API request the test case sends, request and response, secrets always masked |
+| `allure.link.issue.pattern` | *(none)* | e.g. `https://jira.example.com/browse/{}` - lets `issue('BUG-12')` or the tag `allure.issue:BUG-12` build the full link |
+| `allure.link.tms.pattern` | *(none)* | Same for `tmsLink('TC-34')` / `allure.tms:TC-34` |
+
+**Allure TestOps**
+
+| Key | Default | Meaning |
+|---|---|---|
+| `allure.testplan.enabled` | `true` | Follow a test plan when one is given (Allure TestOps "Rerun" of selected tests): only the listed test cases run. `false` always runs everything |
+| `allure.testplan.path` | *(none)* | Test plan file. Normally left unset - Allure TestOps passes it as `ALLURE_TESTPLAN_PATH` for each rerun |
 
 ## CI setup
 
@@ -325,7 +407,8 @@ agent's PATH - each config below takes care of that too.
 
 This repo includes three ready-to-copy configs - `azure-pipelines.example.yml`,
 `github-actions.example.yml`, `gitlab-ci.example.yml` - each verified
-working end-to-end, not just written against documentation. Pick the one
+working end-to-end, not just written against documentation (plus
+`testops-github-actions.example.yml` for [Allure TestOps](#allure-testops)). Pick the one
 matching your platform, copy it in under the filename your CI expects,
 fill in the one TODO (your Test Suite or Test Suite Collection path), and
 add your Katalon API key as described below.
@@ -421,7 +504,127 @@ Reports show up on the pipeline job's page, in the **Job artifacts** panel.
   own name, so the bridge derives it from the run's own folder structure,
   verified against real multi-suite runs on all three platforms above.
 
+## Allure TestOps
+
+Send every CI run's results to [Allure TestOps](https://qameta.io/), and
+**rerun only the tests you pick** from TestOps: TestOps starts your CI job
+with a test plan, and the bridge runs just those test cases - the rest are
+skipped. Nothing to change in your tests or in `allure.properties`.
+
+This uses GitHub Actions and `testops-github-actions.example.yml`; any CI
+that TestOps supports works the same way.
+
+### 1. Allure TestOps (one-time)
+
+1. **API token:** your avatar > **API Tokens** > **+ Token**. Copy it - it
+   goes into GitHub in step 2.
+
+   ![TestOps API token](demo/images/testops/01_testops_api_token.png)
+
+2. **Connect TestOps to GitHub:** **Administration > Integrations > + Add
+   integration > GitHub** with Name `github.com`, Endpoint
+   `https://github.com`, Endpoint for API calls `https://api.github.com`,
+   then **Enable integration**.
+
+   ![TestOps GitHub integration](demo/images/testops/02_testops_admin_github.png)
+
+3. **Let TestOps start your workflow:** in your project, **Settings >
+   Integrations > github.com**, paste a GitHub token (made in step 2
+   below) > **Test connection** > **Save changes**.
+
+   ![TestOps project GitHub token](demo/images/testops/03_testops_project_github.png)
+
+### 2. GitHub (one-time)
+
+1. **GitHub token for TestOps:** your GitHub **Settings > Developer
+   settings > Personal access tokens > Fine-grained tokens > Generate new
+   token**. Repository access: **Only select repositories** > your Katalon
+   repo. Permissions > Repository permissions > **Actions: Read and
+   write**. Paste it into TestOps (step 1.3).
+2. **Secrets and variables** - your repo's **Settings > Secrets and
+   variables > Actions**:
+
+   | Kind | Name | Value |
+   |---|---|---|
+   | Secret | `ALLURE_TOKEN` | the TestOps API token from step 1.1 |
+   | Secret | `KATALON_API_KEY` | your Katalon Runtime Engine API key |
+   | Variable | `ALLURE_ENDPOINT` | your TestOps address, e.g. `https://example.testops.cloud` |
+   | Variable | `ALLURE_PROJECT_ID` | your TestOps project ID - the number in `.../project/<id>/...` |
+
+3. **Workflow:** copy `testops-github-actions.example.yml` into your repo
+   as `.github/workflows/allure-testops.yml` **on your default branch**
+   (GitHub only lets TestOps start workflows that exist there), replace
+   `<YourCollection>`, commit and push.
+
+### 3. First run and job setup (one-time)
+
+1. Run it once from GitHub: **Actions > Allure TestOps > Run workflow**.
+
+   ![Run the workflow](demo/images/testops/07_github_run_workflow.png)
+
+2. The results show up in TestOps under **Launches**, and TestOps creates a
+   job for the workflow.
+
+   ![First launch in TestOps](demo/images/testops/08_testops_first_launch.png)
+
+3. **Jobs > ⋯ > Configure**: Build server `github.com`, tick **Job can be
+   used to run tests**, add parameter `Branch` = `main` > **Submit**. Then
+   click **⟳** (Update job from the build server).
+
+   ![Configure the job](demo/images/testops/09_testops_job_configure.png)
+
+   ![Jobs list](demo/images/testops/10_testops_jobs_list.png)
+
+### 4. Rerun selected tests
+
+1. Open a launch > **Tree** > tick the tests > **⋯** in the bottom bar >
+   **Rerun** > pick the job.
+
+   ![Rerun selected tests](demo/images/testops/11_testops_rerun_selected.png)
+
+2. TestOps starts the workflow with a test plan of the ticked tests:
+
+   ![TestOps test plan in GitHub](demo/images/testops/12_github_testplan_step.png)
+
+3. The bridge runs only those and skips the rest - "Show the bridge's
+   messages" lists it:
+
+   ![Bridge running only the planned tests](demo/images/testops/13_github_bridge_console.png)
+
+4. The new results land in the same launch, as retries of the tests you
+   picked:
+
+   ![Rerun result in TestOps](demo/images/testops/14_testops_rerun_result.png)
+
+**Good to know**
+
+- A run started from GitHub (or on a schedule) has no test plan, so
+  everything runs.
+- Use **Rerun**, not **Rerun manually** - the manual one marks the test
+  case as a manual test, and TestOps then leaves it out of every test plan
+  (it won't run from TestOps any more). If that happens, delete that test
+  case in TestOps and run the workflow once from GitHub; it comes back as
+  an automated test.
+- To ignore TestOps' test plans and always run everything, set
+  `allure.testplan.enabled=false` in `allure.properties`:
+
+  ![Switch test plans off](demo/images/testops/15_katalon_testplan_settings.png)
+
 ## Troubleshooting
+
+**Where are the `[Allure]` messages?** In Katalon Studio, in the
+**Console** tab. In CI they're in Katalon's own console logs under
+`Reports/` - the TestOps example workflow prints them with:
+
+```bash
+find Reports -name 'console*.log' -print0 | xargs -0 -r grep -h '\[Allure\]'
+```
+
+**`[Allure] Allure 3.x found ... This bridge needs Allure 2`** - `npm
+install -g allure` installs Allure 3. Install Allure 2 with `npm install
+-g allure-commandline` (or point `allure.commandline.path` at an Allure 2
+install). The test results are written either way; only the HTML report
+is skipped.
 
 **HTML report folder is empty, or a `[Allure] Could not auto-generate the
 HTML report...` warning shows up in the console.** The bridge couldn't

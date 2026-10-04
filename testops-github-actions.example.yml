@@ -1,0 +1,127 @@
+# Example GitHub Actions workflow for a Katalon Studio project using the
+# Allure-Katalon Bridge with Allure TestOps. Copy this into your project's
+# repo as .github/workflows/allure-testops.yml on your default branch, fill
+# in the TODO, and it's ready to run. See "Allure TestOps" in the README for
+# the one-time TestOps and GitHub setup.
+#
+# Every run uploads its results to Allure TestOps. When you rerun selected
+# tests from TestOps, TestOps starts this same workflow with a test plan;
+# the "Get the TestOps test plan" step hands it to the bridge, and only
+# those tests run.
+#
+# Needs, under Settings > Secrets and variables > Actions:
+#   secret   ALLURE_TOKEN       Allure TestOps API token
+#   secret   KATALON_API_KEY    Katalon Runtime Engine API key
+#   variable ALLURE_ENDPOINT    your TestOps address, e.g. https://example.testops.cloud
+#   variable ALLURE_PROJECT_ID  your TestOps project ID (the number in .../project/<id>/...)
+
+name: Allure TestOps
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Filled in by Allure TestOps when it starts this workflow - leave blank
+      ALLURE_JOB_RUN_ID:
+        description: "Service parameter. Leave blank."
+        required: false
+      ALLURE_USERNAME:
+        description: "Service parameter. Leave blank."
+        required: false
+
+# setup-allurectl reads this workflow run's details from the GitHub API
+permissions:
+  contents: read
+  actions: read
+
+env:
+  ALLURE_ENDPOINT: ${{ vars.ALLURE_ENDPOINT }}
+  ALLURE_PROJECT_ID: ${{ vars.ALLURE_PROJECT_ID }}
+  ALLURE_TOKEN: ${{ secrets.ALLURE_TOKEN }}
+  ALLURE_RESULTS: allure-results
+  ALLURE_JOB_RUN_ID: ${{ github.event.inputs.ALLURE_JOB_RUN_ID }}
+  ALLURE_USERNAME: ${{ github.event.inputs.ALLURE_USERNAME }}
+  ALLURE_LAUNCH_NAME: 'Katalon run ${{ github.run_number }}'
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Allure commandline
+        run: npm install -g allure-commandline
+
+      - name: Keep Allure-Katalon Bridge up to date
+        uses: montbaga/allure-katalon-bridge@v1
+        with:
+          project-path: '${{ github.workspace }}'
+
+      - name: Install and configure allurectl
+        uses: allure-framework/setup-allurectl@v1
+        with:
+          allure-endpoint: ${{ env.ALLURE_ENDPOINT }}
+          allure-project-id: ${{ env.ALLURE_PROJECT_ID }}
+          allure-token: ${{ secrets.ALLURE_TOKEN }}
+
+      # Only when TestOps started this run (a rerun of selected tests)
+      - name: Get the TestOps test plan
+        if: env.ALLURE_JOB_RUN_ID != ''
+        run: |
+          allurectl job-run plan --output-file "$GITHUB_WORKSPACE/testplan.json"
+          echo "ALLURE_TESTPLAN_PATH=$GITHUB_WORKSPACE/testplan.json" >> "$GITHUB_ENV"
+          cat "$GITHUB_WORKSPACE/testplan.json"
+
+      # Linux runners need a virtual display for WebUI tests, and Katalon
+      # Runtime Engine needs JDK 21
+      - name: Start Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb x11-utils
+          Xvfb :99 -screen 0 1920x1080x24 &
+          for i in $(seq 1 30); do
+            if xdpyinfo -display :99 >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Use JDK 21
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+
+      - name: Run Katalon tests
+        continue-on-error: true
+        uses: katalon-studio/katalon-studio-github-action@v4.0
+        with:
+          version: '11.4.0'
+          projectPath: '${{ github.workspace }}'
+          # TODO: replace <YourCollection> with your Test Suite Collection
+          # path, or swap -testSuiteCollectionPath for
+          # -testSuitePath="Test Suites/<YourSuite>" to run a single suite.
+          args: '-noSplash -retry=0 -testSuiteCollectionPath="Test Suites/<YourCollection>" -executionProfile="default" -apiKey=${{ secrets.KATALON_API_KEY }} --config -webui.autoUpdateDrivers=true -reportFolder="${{ github.workspace }}/Reports"'
+
+      # The bridge's own messages (test plan, report ready, warnings) are in
+      # Katalon's console logs under Reports/ - this prints them here
+      - name: Show the bridge's messages
+        if: always()
+        run: |
+          find Reports -name 'console*.log' -print0 | xargs -0 -r grep -h '\[Allure\]' || true
+
+      - name: Upload results to Allure TestOps
+        if: always()
+        run: allurectl upload "$ALLURE_RESULTS"
+
+      - name: Publish Katalon and Allure reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: katalon-and-allure-reports
+          path: |
+            Reports
+            allure-report

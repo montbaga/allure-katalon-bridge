@@ -103,9 +103,39 @@ class AllureKeywords {
         Allure.issue(name, url)
     }
 
+    /** Link built from allure.link.issue.pattern, e.g. issue('BUG-12'). */
+    @Keyword
+    static void issue(String id) {
+        AllureReportBridge.addPatternLink('issue', id)
+    }
+
     @Keyword
     static void tmsLink(String name, String url) {
         Allure.tms(name, url)
+    }
+
+    /** Link built from allure.link.tms.pattern, e.g. tmsLink('TC-34'). */
+    @Keyword
+    static void tmsLink(String id) {
+        AllureReportBridge.addPatternLink('tms', id)
+    }
+
+    /** Marks this test as flaky (known to pass and fail without code changes). */
+    @Keyword
+    static void flaky() {
+        AllureReportBridge.markCurrentTest('flaky')
+    }
+
+    /** Marks this test as muted - still reported, but flagged as not counting. */
+    @Keyword
+    static void muted() {
+        AllureReportBridge.markCurrentTest('muted')
+    }
+
+    /** Marks this test's failure as a known issue. */
+    @Keyword
+    static void known() {
+        AllureReportBridge.markCurrentTest('known')
     }
 
     @Keyword
