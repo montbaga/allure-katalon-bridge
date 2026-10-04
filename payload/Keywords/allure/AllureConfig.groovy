@@ -37,10 +37,46 @@ class AllureConfig {
         // extra "ALLURE_" prefix needed on top of that.
         String envKey = key.toUpperCase().replace('.', '_')
         String envValue = System.getenv(envKey)
+        if (envValue == null || envValue.trim().isEmpty()) {
+            envValue = savedEnvironment().getProperty(envKey)
+        }
         if (envValue != null && !envValue.trim().isEmpty()) {
             return envValue.trim()
         }
         return fileProperties().getProperty(key, defaultValue)
+    }
+
+    private static final String SAVED_ENV_FILE = '.allure-env.properties'
+
+    /** Saves ALLURE_* variables for the run - Katalon doesn't pass them to parallel test case processes. */
+    static void saveEnvironment(File runDir) {
+        Properties vars = new Properties()
+        System.getenv().each { String name, String value ->
+            if (name.toUpperCase().startsWith('ALLURE_') && value?.trim()) {
+                vars.setProperty(name.toUpperCase(), value)
+            }
+        }
+        if (runDir != null && !vars.isEmpty()) {
+            new File(runDir, SAVED_ENV_FILE).withOutputStream { vars.store(it, 'ALLURE_* variables of this run') }
+        }
+    }
+
+    /** What saveEnvironment() saved, found by walking up from this process's report folder. */
+    private static Properties savedEnvironment() {
+        Properties vars = new Properties()
+        try {
+            String reportFolder = RunConfiguration.getReportFolder()
+            File dir = reportFolder ? new File(reportFolder) : null
+            for (int i = 0; i < 10 && dir != null; i++) {
+                File saved = new File(dir, SAVED_ENV_FILE)
+                if (saved.isFile()) {
+                    saved.withInputStream { vars.load(it) }
+                    break
+                }
+                dir = dir.parentFile
+            }
+        } catch (Throwable ignored) { }
+        return vars
     }
 
     private static File resolvePath(String configuredPath) {
@@ -75,6 +111,31 @@ class AllureConfig {
 
     static boolean attachScreenshotAlways() {
         return Boolean.parseBoolean(read('allure.attach.screenshot.always', 'false'))
+    }
+
+    /** HTML of the open page (XML view hierarchy for mobile) when a test case doesn't pass. */
+    static boolean attachPageSourceOnFailure() {
+        return Boolean.parseBoolean(read('allure.attach.page.source.on.failure', 'true'))
+    }
+
+    /** Whether to honour an Allure test plan (run only the test cases it lists). */
+    static boolean testPlanEnabled() {
+        return Boolean.parseBoolean(read('allure.testplan.enabled', 'true'))
+    }
+
+    /** Test plan file - Allure TestOps sets it per rerun through ALLURE_TESTPLAN_PATH. Empty if none. */
+    static String testPlanPath() {
+        return read('allure.testplan.path', '')?.trim()
+    }
+
+    /** Each API request a test case sent (from Katalon's .har files), secrets masked. */
+    static boolean attachHttp() {
+        return Boolean.parseBoolean(read('allure.attach.http', 'true'))
+    }
+
+    /** e.g. allure.link.issue.pattern=https://jira.example.com/browse/{} - empty if not set. */
+    static String linkPattern(String type) {
+        return read("allure.link.${type}.pattern", '')?.trim()
     }
 
     static File getCategoriesFile() {
