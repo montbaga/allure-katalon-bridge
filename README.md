@@ -271,12 +271,15 @@ The Suites view groups results as Collection > Test Suite > browser
 `Regression > Login Suite > Chrome`. Each test also carries `browser`,
 `os` and (for mobile runs) `device` labels, and a failed step shows the
 screenshot Katalon took at the moment it failed. The Environment panel lists every
-browser actually opened across the run (e.g. `Chrome, Firefox`). If a
-Collection runs the same Test Suite more than once - same browser or
-different - each run shows up as its own entry (`Login Suite
-(occurrence 1)`, `Login Suite (occurrence 2)`) instead of being merged
-into one, and a test case reused across suites is reported once per
-suite, not as retries of one test.
+browser actually opened across the run (e.g. `Chrome, Firefox`).
+
+A test's identity in Allure is its test suite and test case, plus its
+parameters: `Browser` and `Execution profile` are added to every test.
+So a Collection running the same Test Suite on Chrome and on Firefox
+reports two separate tests, each with its own history - whatever order
+the Collection runs them in - and a test case reused across suites is
+reported once per suite, not as retries of one test. Running the same
+suite twice with the same browser and profile shows as a retry.
 
 If a suite's `@SetUp` or `@TearDown` fails, the report shows it as a
 broken result with the exception and stack trace - Katalon runs no test
@@ -303,6 +306,8 @@ CustomKeywords.'allure.AllureKeywords.attachJson'('Booking payload', responsePay
 **From Katalon's own fields, no code:** a Test Case's **Description**
 becomes the report description, and its **Variables** become parameters
 (variables marked masked show as `******` - the value is never written).
+A variable that changes every run, like a random order id, should be listed in
+`allure.parameters.excluded`, or each run shows as a new test with no history.
 In the **Tag** field of a Test Case or Test Suite, `allure.label.<name>:<value>`
 becomes a label and any other tag becomes an Allure tag, e.g.:
 
@@ -387,6 +392,7 @@ processes) - the bridge saves them for the run when the suite starts.
 | `allure.attach.http` | `true` | One attachment per API request the test case sends, request and response, secrets always masked |
 | `allure.link.issue.pattern` | *(none)* | e.g. `https://jira.example.com/browse/{}` - lets `issue('BUG-12')` or the tag `allure.issue:BUG-12` build the full link |
 | `allure.link.tms.pattern` | *(none)* | Same for `tmsLink('TC-34')` / `allure.tms:TC-34` |
+| `allure.parameters.excluded` | *(none)* | Comma-separated variable names, e.g. `orderId,timestamp`. Still shown as parameters, but a new value doesn't make it a new test, so history is kept |
 
 **Allure TestOps**
 

@@ -862,26 +862,6 @@ class AllureReportBridge {
         return timestampIndex > 0 ? segments[0..<timestampIndex].join('/') : null
     }
 
-    /**
-     * Same folder path as suiteInstanceKey(), but keeping the timestamp
-     * segment instead of stopping before it. On Katalon Runtime Engine's
-     * console mode on macOS, repeated occurrences of the same suite in
-     * one Collection share a single parent folder with separate
-     * timestamp subfolders (e.g. "New Test Suite/<ts1>" and
-     * "New Test Suite/<ts2>"), rather than each getting its own
-     * disambiguated sibling folder. suiteInstanceKey() alone resolves
-     * both to the same "New Test Suite" - keeping the timestamp tells
-     * them apart. See suiteOccurrenceDiscriminator().
-     */
-    private static String suiteInstancePathWithTimestamp(File runDir) {
-        List<String> segments = suiteInstancePathSegments(runDir)
-        if (segments == null) {
-            return null
-        }
-        int timestampIndex = segments.findIndexOf { it ==~ /\d{8}_\d{6}/ }
-        return timestampIndex >= 0 ? segments[0..timestampIndex].join('/') : null
-    }
-
     private static List<String> suiteInstancePathSegments(File runDir) {
         try {
             String reportFolder = RunConfiguration.getReportFolder()
@@ -898,204 +878,6 @@ class AllureReportBridge {
         } catch (Throwable ignored) {
             return null
         }
-    }
-
-    /**
-     * [ordinal, totalOccurrences] for THIS suite occurrence among every
-     * occurrence of the SAME underlying suite (matched by plan.jsonl's
-     * entityId, e.g. "Test Suites/API Test Suite") within the current
-     * run's plan. ordinal feeds suiteOccurrenceDiscriminator() (makes
-     * startTestCase()'s historyId unique per occurrence); totalOccurrences
-     * feeds suiteLabelSuffix() (only distinguishes the visible "Suite"
-     * label when there's genuinely more than one). [0, 1] when a suite
-     * appears only once, by far the common case - this only differs when
-     * the very same suite is deliberately used more than once inside one
-     * Test Suite Collection.
-     *
-     * Katalon's own per-run disambiguation suffix on the report folder
-     * (e.g. "API Test Suite_45ff52a0") can't be used for the ordinal
-     * directly: it is regenerated on every run, so baking it into
-     * historyId would defeat Allure's trend graphs across days. Position
-     * within plan.jsonl's children array reflects the collection's
-     * *configured* suite order instead, which stays the same run to run.
-     *
-     * Returns null - not [0, 1] - whenever this genuinely can't be
-     * determined (no plan.jsonl, unreadable, or this suite isn't findable
-     * in it), so callers can tell "resolved" apart from "unknown" instead
-     * of silently colliding two real occurrences onto the same "0"
-     * (Katalon Runtime Engine's console mode always writes plan.jsonl;
-     * the Katalon Studio IDE may not). Still a confident [0, 1] for a
-     * plain, non-collection run whenever plan.jsonl is readable at all.
-     */
-    private static List<Integer> suiteOccurrenceFromPlan() {
-        try {
-            File runDir = currentRunDir()
-            String myKey = runDir != null ? suiteInstanceKey(runDir) : null
-            if (runDir == null || myKey == null) {
-                return null
-            }
-            File planFile = new File(runDir, 'plan.jsonl')
-            if (!planFile.isFile()) {
-                return null
-            }
-            String firstLine
-            planFile.withReader('UTF-8') { reader -> firstLine = reader.readLine() }
-            if (!firstLine || !firstLine.trim()) {
-                return null
-            }
-            JsonObject root = JsonParser.parseString(firstLine).getAsJsonObject()
-            JsonObject execution = root.has('execution') ? root.getAsJsonObject('execution') : null
-            String kind = execution?.get('kind')?.getAsString()
-            if (kind != 'TEST_SUITE_COLLECTION') {
-                // A plain suite/test case run - unambiguously the only
-                // occurrence, whether or not plan.jsonl even models this.
-                return [0, 1]
-            }
-            List<JsonObject> suiteChildren = []
-            execution.getAsJsonArray('children')?.each { childEl ->
-                JsonObject child = childEl.getAsJsonObject()
-                if (child.get('kind')?.getAsString() == 'TEST_SUITE') {
-                    suiteChildren << child
-                }
-            }
-            JsonObject mine = suiteChildren.find { topLevelExecutionDirSegment(it) == myKey }
-            String myEntityId = mine?.get('entityId')?.getAsString()
-            if (mine == null || !myEntityId) {
-                return null
-            }
-            List<JsonObject> siblings = suiteChildren.findAll { it.get('entityId')?.getAsString() == myEntityId }
-            int ordinal = siblings.findIndexOf { topLevelExecutionDirSegment(it) == myKey }
-            return ordinal >= 0 ? [ordinal, siblings.size()] : null
-        } catch (Throwable ignored) {
-            return null
-        }
-    }
-
-    /**
-     * The string startTestCase() bakes into historyId to keep two
-     * occurrences of the very same suite within one run - e.g. the same
-     * Test Suite Collection member run once per browser - from colliding
-     * onto one Allure historyId. Allure treats matching historyIds as
-     * retries of one logical test and collapses every earlier one out of
-     * the default report view, which is indistinguishable, from the
-     * report reader's side, from that browser's results being missing
-     * entirely.
-     *
-     * Prefers suiteOccurrenceFromPlan()'s plan.jsonl-based position when
-     * available, kept byte-for-byte identical to before this method
-     * existed so nobody's existing Allure trend history changes. When
-     * that's unavailable, falls back to Katalon's own per-occurrence
-     * report folder name (suiteInstanceKey()) instead of blindly assuming
-     * "0" - but only once this run is independently confirmed (via
-     * resolveCollectionName(), which needs no plan.jsonl) to actually be
-     * a Test Suite Collection, so a plain standalone suite keeps
-     * returning "0" whether or not plan.jsonl exists, and only the
-     * population actually at risk of two occurrences colliding is
-     * affected.
-     *
-     * suiteInstanceKey() alone isn't enough on platforms where repeated
-     * occurrences share one parent folder instead of getting their own
-     * (see suiteInstancePathWithTimestamp()) - it resolves to the same
-     * value for both, recreating the exact collision this method exists
-     * to prevent. Falls back to the timestamp-inclusive path only once
-     * that shared parent is confirmed to hold more than one timestamp
-     * subfolder, trading historyId stability for that specific case; a
-     * single-occurrence suite still gets suiteInstanceKey()'s stable
-     * value, since a same-run collision is worse than losing trend
-     * continuity, but only for suites actually at risk of it.
-     */
-    private static String suiteOccurrenceDiscriminator(String ownSuiteName) {
-        List<Integer> fromPlan = suiteOccurrenceFromPlan()
-        if (fromPlan != null) {
-            return fromPlan[0].toString()
-        }
-        try {
-            File runDir = currentRunDir()
-            if (runDir == null) {
-                return '0'
-            }
-            String collectionName = resolveCollectionName(runDir, ownSuiteName)
-            if (!collectionName) {
-                return '0'
-            }
-            String key = suiteInstanceKey(runDir)
-            if (!key) {
-                return '0'
-            }
-            if (key != ownSuiteName || !hasMultipleTimestampSubfolders(new File(runDir, key))) {
-                return key
-            }
-            return suiteInstancePathWithTimestamp(runDir) ?: key
-        } catch (Throwable ignored) {
-            return '0'
-        }
-    }
-
-    private static boolean hasMultipleTimestampSubfolders(File instanceDir) {
-        File[] timestampDirs = instanceDir.listFiles({ File f -> f.isDirectory() && f.name ==~ /\d{8}_\d{6}/ } as FileFilter)
-        return timestampDirs != null && timestampDirs.length > 1
-    }
-
-    /**
-     * Suffix appended to the "Suite" label Allure groups results by.
-     *
-     * Only added when this suite genuinely occurs more than once in the
-     * current run - e.g. the same Collection member run twice. Without
-     * one, two occurrences of "API Test Suite" would share one suite
-     * label, and Allure's Suites view would merge them into what reads
-     * as one suite holding every test case from both runs. A 1-based
-     * occurrence count is used here; the browser goes in subSuite.
-     *
-     * The plan.jsonl path knows the total occurrence count upfront, so
-     * every occurrence (including the first) gets suffixed together. The
-     * suiteInstanceKey() fallback only recognizes occurrences after the
-     * *first* (Katalon's disambiguating hash only starts from the second
-     * one on), so a first occurrence found this way stays unsuffixed
-     * while later ones get distinguished - still two separate suites,
-     * just not symmetrically labelled.
-     */
-    private static String suiteLabelSuffix(String ownSuiteName) {
-        List<Integer> fromPlan = suiteOccurrenceFromPlan()
-        Integer ordinal
-        boolean repeats
-        if (fromPlan != null) {
-            ordinal = fromPlan[0]
-            repeats = fromPlan[1] > 1
-        } else {
-            ordinal = null
-            repeats = false
-            try {
-                File runDir = currentRunDir()
-                if (runDir != null && resolveCollectionName(runDir, ownSuiteName)) {
-                    String key = suiteInstanceKey(runDir)
-                    repeats = key != null && key != ownSuiteName
-                }
-            } catch (Throwable ignored) { }
-        }
-        return repeats ? " (occurrence ${(ordinal ?: 0) + 1})" : ''
-    }
-
-    /**
-     * The report folder path (e.g. "API Test Suite_45ff52a0", or
-     * "TestSuitesFolder/FolderSuite" when nested inside a Test Suites
-     * folder) a plan.jsonl TEST_SUITE child will execute under, minus its
-     * trailing timestamp segment, read from its first TEST_SUITE_ATTEMPT
-     * child's executionDirPath - the same shape suiteInstanceKey()
-     * derives from RunConfiguration.getReportFolder() at runtime, so the
-     * two can be matched against each other.
-     */
-    private static String topLevelExecutionDirSegment(JsonObject suiteChild) {
-        def attempts = suiteChild.getAsJsonArray('children')
-        if (!attempts || attempts.size() == 0) {
-            return null
-        }
-        JsonObject firstAttempt = attempts[0].getAsJsonObject()
-        if (!firstAttempt.has('executionDirPath')) {
-            return null
-        }
-        String dirPath = firstAttempt.get('executionDirPath').getAsString()
-        int slash = dirPath.lastIndexOf('/')
-        return slash > 0 ? dirPath.substring(0, slash) : dirPath
     }
 
     /**
@@ -1461,39 +1243,31 @@ class AllureReportBridge {
 
     /** New result with this run's identity and grouping; key is the test case id or '@SetUp'/'@TearDown'. */
     private static TestResult newResult(String suiteName, String key, String name) {
-        String suiteLabel = "${suiteName}${suiteLabelSuffix(suiteName)}"
         String collectionName = safeCall { resolveCollectionName(currentRunDir(), suiteName) }
         if (collectionName == suiteName) {
             collectionName = null
         }
         String browser = detectBrowser()
-        String executionId = ResultsUtils.md5("${suiteName}#${suiteOccurrenceDiscriminator(suiteName)}|${key}")
+        String profile = safeCall { RunConfiguration.getExecutionProfile() } ?: 'default'
+        String suitePath = suitePath(suiteName)
 
         TestResult result = new TestResult()
         result.setUuid(UUID.randomUUID().toString())
-        // Suite name + this suite's occurrence discriminator, not
-        // just the test case id alone - see suiteOccurrenceDiscriminator() for why.
-        // Two different suites can legitimately share a reusable test
-        // case (same testCaseId, different suite), and a Test Suite
-        // Collection can legitimately run the very same suite more than
-        // once - a plain testCaseId-only historyId collides in both
-        // cases, and Allure treats same-historyId results as retries of
-        // one logical test, silently collapsing every earlier one out
-        // of the default report view.
-        result.setHistoryId(executionId)
-        // newer Allure 2 groups retries by testCaseId, so it must be per suite run too
-        result.setTestCaseId(executionId)
+        // suite + test case only, never the position in a collection; browser
+        // and profile go in parameters, which Allure 2.45+ counts in identity
+        result.setTestCaseId(ResultsUtils.md5("${suitePath}|${key}"))
         result.setName(name)
-        result.setFullName([collectionName, suiteLabel, key].findAll { it }.join('/'))
-        // The visible "Suite" grouping, not historyId (already
-        // disambiguated above, independent of this) - see
-        // suiteLabelSuffix() for why this needs its own distinguishing
-        // suffix when the same suite runs more than once.
+        result.setFullName("${suitePath}/${key}")
+        if (browser) {
+            result.getParameters().add(contextParameter('Browser', browser))
+        }
+        result.getParameters().add(contextParameter('Execution profile', profile))
+        result.setHistoryId(historyIdOf(result))
         List labels = []
         if (collectionName) {
             labels << ResultsUtils.createParentSuiteLabel(collectionName)
         }
-        labels << ResultsUtils.createSuiteLabel(suiteLabel)
+        labels << ResultsUtils.createSuiteLabel(suiteName)
         if (browser) {
             labels << ResultsUtils.createSubSuiteLabel(browser)
             labels << ResultsUtils.createLabel('browser', browser)
@@ -1508,10 +1282,39 @@ class AllureReportBridge {
             ResultsUtils.createThreadLabel(),
             ResultsUtils.createFrameworkLabel('Katalon Studio'),
             ResultsUtils.createLanguageLabel('Groovy'),
-            ResultsUtils.createLabel('executionProfile', RunConfiguration.getExecutionProfile() ?: 'default'),
+            ResultsUtils.createLabel('executionProfile', profile),
         ])
         result.setLabels(labels)
         return result
+    }
+
+    private static Parameter contextParameter(String name, String value) {
+        Parameter p = new Parameter()
+        p.setName(name)
+        p.setValue(value)
+        return p
+    }
+
+    /** Like Allure 2.45+ itself: testCaseId plus every non-excluded parameter, for older Allure 2 versions. */
+    private static String historyIdOf(TestResult result) {
+        String parameters = (result.getParameters() ?: [])
+            .findAll { !it.getExcluded() }
+            .collect { "${it.getName()}=${it.getValue()}" }
+            .sort()
+            .join(';')
+        return ResultsUtils.md5("${result.getTestCaseId()}|${parameters}")
+    }
+
+    /** Suite path under Test Suites (e.g. "Audit/Identity_SuiteA"), or the plain name. */
+    private static String suitePath(String suiteName) {
+        try {
+            String source = RunConfiguration.getExecutionSource()?.replace('\\', '/')
+            int i = source ? source.toLowerCase().lastIndexOf('/test suites/') : -1
+            if (i >= 0 && source.toLowerCase().endsWith('.ts')) {
+                return source.substring(i + '/test suites/'.length(), source.length() - 3)
+            }
+        } catch (Throwable ignored) { }
+        return suiteName
     }
 
     static void startTestCase(TestCaseContext testCaseContext) {
@@ -1604,6 +1407,8 @@ class AllureReportBridge {
                         tr.getParameters().add(p)
                     }
                 }
+                // now that every parameter is known, including the script's own
+                tr.setHistoryId(historyIdOf(tr))
             })
             if (activeBrowser) {
                 recordActiveBrowserInEnvironment(AllureConfig.getResultsDir(), activeBrowser)
@@ -1733,9 +1538,13 @@ class AllureReportBridge {
             }
             Map testCase = readKatalonFile(new File(RunConfiguration.getProjectDir(), "${testCaseContext.getTestCaseId()}.tc"))
             Set<String> masked = (testCase?.masked ?: []) as Set
+            Set<String> excluded = AllureConfig.excludedParameters()
             return variables.collect { String name, Object value ->
                 Parameter p = new Parameter()
                 p.setName(name)
+                if (name in excluded) {
+                    p.setExcluded(true)
+                }
                 if (name in masked) {
                     p.setValue('******')
                     p.setMode(Parameter.Mode.MASKED)
