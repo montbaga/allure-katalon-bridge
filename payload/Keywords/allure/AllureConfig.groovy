@@ -133,6 +133,11 @@ class AllureConfig {
         return Boolean.parseBoolean(read('allure.attach.http', 'true'))
     }
 
+    /** Variable names still shown as parameters but left out of a test's identity. */
+    static Set<String> excludedParameters() {
+        return (read('allure.parameters.excluded', '') ?: '').split(',')*.trim().findAll() as Set
+    }
+
     /** e.g. allure.link.issue.pattern=https://jira.example.com/browse/{} - empty if not set. */
     static String linkPattern(String type) {
         return read("allure.link.${type}.pattern", '')?.trim()
