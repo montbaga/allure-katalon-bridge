@@ -15,7 +15,7 @@ under the hood.
 
 ## See It in Action
 
-**Watch the 30-second demo:** [demo/allure-katalon-bridge-demo.mp4](demo/allure-katalon-bridge-demo.mp4)
+https://github.com/user-attachments/assets/f88a1e71-5e50-4e7b-b246-41c4d9b387e6
 
 **1. Install with one command**
 
