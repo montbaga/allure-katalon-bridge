@@ -15,6 +15,8 @@ under the hood.
 
 ## See It in Action
 
+**Watch the 30-second demo:** [demo/allure-katalon-bridge-demo.mp4](demo/allure-katalon-bridge-demo.mp4)
+
 **1. Install with one command**
 
 ![Install with npx](demo/images/install_npx_1st_Step.jpg)
