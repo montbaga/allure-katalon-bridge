@@ -15,6 +15,8 @@ under the hood.
 
 ## See It in Action
 
+https://github.com/user-attachments/assets/f88a1e71-5e50-4e7b-b246-41c4d9b387e6
+
 **1. Install with one command**
 
 ![Install with npx](demo/images/install_npx_1st_Step.jpg)
