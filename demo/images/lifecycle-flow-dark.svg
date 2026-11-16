@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 280" width="1200" height="280" role="img" aria-label="Allure-Katalon Bridge lifecycle flow">
+  <defs>
+    <clipPath id="flow-clip">
+      <rect x="4" y="4" width="1192" height="272" rx="18"/>
+    </clipPath>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1 L 9 5 L 1 9 z" fill="#ff7b3b"/>
+    </marker>
+    <marker id="arrow-mint" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1 L 9 5 L 1 9 z" fill="#3dd98f"/>
+    </marker>
+    <marker id="arrow-gold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1 L 9 5 L 1 9 z" fill="#ffc857"/>
+    </marker>
+    <style>
+      .sans { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace; }
+      @keyframes dashMove {
+        from { stroke-dashoffset: 24; }
+        to { stroke-dashoffset: 0; }
+      }
+      @keyframes engineGlow {
+        0%, 100% { stroke-opacity: 0.45; }
+        50% { stroke-opacity: 1; }
+      }
+      .flow-line { stroke-dasharray: 6 6; animation: dashMove 1.4s linear infinite; }
+      .engine-card { animation: engineGlow 2.8s ease-in-out infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .flow-line, .engine-card { animation: none; }
+      }
+    </style>
+  </defs>
+
+  <g clip-path="url(#flow-clip)">
+    <rect x="4" y="4" width="1192" height="272" rx="18" fill="#0f181c"/>
+
+    <text x="34" y="34" class="mono" font-size="11" font-weight="700" letter-spacing="1.4" fill="#ffc857">KATALON TO ALLURE LIFECYCLE PIPELINE</text>
+    <text x="1166" y="34" text-anchor="end" class="mono" font-size="11" fill="#ece6da" fill-opacity="0.52">THREAD-SAFE · NEVER FAILS A TEST</text>
+    <line x1="34" y1="48" x2="1166" y2="48" stroke="#ece6da" stroke-opacity="0.1"/>
+
+    <!-- Station 1 -->
+    <rect x="34" y="80" width="222" height="148" rx="14" fill="#152126" stroke="#ece6da" stroke-opacity="0.18"/>
+    <rect x="52" y="96" width="38" height="22" rx="6" fill="#21323a"/>
+    <text x="71" y="111" text-anchor="middle" class="mono" font-size="11" font-weight="700" fill="#ff7b3b">01</text>
+    <text x="52" y="144" class="sans" font-size="17" font-weight="700" fill="#ece6da">@BeforeTestSuite</text>
+    <text x="52" y="169" class="sans" font-size="13" fill="#c7c2b6">Clears prior results, checks</text>
+    <text x="52" y="187" class="sans" font-size="13" fill="#c7c2b6">TestOps testplan &amp; carries</text>
+    <text x="52" y="205" class="sans" font-size="13" fill="#c7c2b6">history for Collections.</text>
+
+    <line x1="262" y1="154" x2="294" y2="154" stroke="#ff7b3b" stroke-width="2" class="flow-line" marker-end="url(#arrow-orange)"/>
+
+    <!-- Station 2 -->
+    <rect x="302" y="80" width="222" height="148" rx="14" fill="#152126" stroke="#ece6da" stroke-opacity="0.18"/>
+    <rect x="320" y="96" width="38" height="22" rx="6" fill="#21323a"/>
+    <text x="339" y="111" text-anchor="middle" class="mono" font-size="11" font-weight="700" fill="#ff7b3b">02</text>
+    <text x="320" y="144" class="sans" font-size="17" font-weight="700" fill="#ece6da">Test Case runs</text>
+    <text x="320" y="169" class="sans" font-size="13" fill="#c7c2b6">Scripts stay unmodified.</text>
+    <text x="320" y="187" class="sans" font-size="13" fill="#c7c2b6">Collects steps, parameters,</text>
+    <text x="320" y="205" class="sans" font-size="13" fill="#c7c2b6">tags &amp; masked .har calls.</text>
+
+    <line x1="530" y1="154" x2="562" y2="154" stroke="#ff7b3b" stroke-width="2" class="flow-line" marker-end="url(#arrow-orange)"/>
+
+    <!-- Station 3 -->
+    <rect x="570" y="72" width="246" height="164" rx="14" fill="#17282e" stroke="#ff7b3b" stroke-width="1.6" class="engine-card"/>
+    <rect x="588" y="88" width="144" height="22" rx="6" fill="#ff7b3b"/>
+    <text x="660" y="103" text-anchor="middle" class="mono" font-size="10.5" font-weight="700" fill="#0f181c">03 · BRIDGE ENGINE</text>
+    <text x="588" y="138" class="sans" font-size="17" font-weight="700" fill="#ece6da">AllureReportBridge</text>
+    <text x="588" y="163" class="sans" font-size="13" fill="#ded7c8">Maps statuses, renders nested</text>
+    <text x="588" y="181" class="sans" font-size="13" fill="#ded7c2">execution steps &amp; triggers</text>
+    <text x="588" y="199" class="sans" font-size="13" fill="#ded7c2">allure generate when done.</text>
+    <text x="588" y="220" class="mono" font-size="10.5" fill="#3dd98f">SHADED JACKSON · ISOLATED</text>
+
+    <!-- Branching connectors -->
+    <path d="M 816 116 C 844 116, 844 91, 868 91" fill="none" stroke="#3dd98f" stroke-width="2" class="flow-line" marker-end="url(#arrow-mint)"/>
+    <path d="M 816 154 L 868 154" fill="none" stroke="#ffc857" stroke-width="2" class="flow-line" marker-end="url(#arrow-gold)"/>
+    <path d="M 816 192 C 844 192, 844 217, 868 217" fill="none" stroke="#ff7b3b" stroke-width="2" class="flow-line" marker-end="url(#arrow-orange)"/>
+
+    <!-- Output 1: HTML -->
+    <rect x="876" y="64" width="290" height="54" rx="11" fill="#0d231d" stroke="#3dd98f" stroke-opacity="0.55"/>
+    <rect x="890" y="79" width="84" height="24" rx="5" fill="#3dd98f" fill-opacity="0.16" stroke="#3dd98f" stroke-opacity="0.5"/>
+    <text x="932" y="95" text-anchor="middle" class="mono" font-size="11" font-weight="700" fill="#3dd98f">HTML</text>
+    <text x="986" y="88" class="sans" font-size="13" font-weight="600" fill="#ece6da">Single-file report</text>
+    <text x="986" y="105" class="sans" font-size="11.5" fill="#a8b4b8">Double-click ready + trend graphs</text>
+
+    <!-- Output 2: Evidence -->
+    <rect x="876" y="127" width="290" height="54" rx="11" fill="#241e12" stroke="#ffc857" stroke-opacity="0.55"/>
+    <rect x="890" y="142" width="84" height="24" rx="5" fill="#ffc857" fill-opacity="0.16" stroke="#ffc857" stroke-opacity="0.5"/>
+    <text x="932" y="158" text-anchor="middle" class="mono" font-size="11" font-weight="700" fill="#ffc857">EVIDENCE</text>
+    <text x="986" y="151" class="sans" font-size="13" font-weight="600" fill="#ece6da">Rich attachments</text>
+    <text x="986" y="168" class="sans" font-size="11.5" fill="#a8b4b8">Screenshots, DOM/XML &amp; HTTP</text>
+
+    <!-- Output 3: CI & TestOps -->
+    <rect x="876" y="190" width="290" height="54" rx="11" fill="#261611" stroke="#ff7b3b" stroke-opacity="0.6"/>
+    <rect x="890" y="205" width="84" height="24" rx="5" fill="#ff7b3b" fill-opacity="0.16" stroke="#ff7b3b" stroke-opacity="0.55"/>
+    <text x="932" y="221" text-anchor="middle" class="mono" font-size="11" font-weight="700" fill="#ff7b3b">TESTOPS</text>
+    <text x="986" y="214" class="sans" font-size="13" font-weight="600" fill="#ece6da">CI &amp; selective reruns</text>
+    <text x="986" y="231" class="sans" font-size="11.5" fill="#a8b4b8">Azure, GitHub, GitLab &amp; Jenkins</text>
+
+    <circle r="4.5" fill="#ffc857">
+      <animateMotion dur="3.4s" repeatCount="indefinite" path="M 256 154 L 302 154 M 524 154 L 570 154 M 816 116 C 844 116, 844 91, 874 91"/>
+    </circle>
+
+    <rect x="4.75" y="4.75" width="1190.5" height="270.5" rx="17.25" fill="none" stroke="#ece6da" stroke-opacity="0.15" stroke-width="1.5"/>
+  </g>
+</svg>

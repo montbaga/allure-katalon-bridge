@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 206" width="1200" height="206" role="img" aria-label="Five Bridge Capabilities: Zero Plugin, No Clash, Collection Trends, Masked HTTP, TestOps Ready">
+  <defs>
+    <style>
+      .sans { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace; }
+      @keyframes gateBeacon {
+        0%, 100% { opacity: 0.25; transform: scale(0.9); }
+        20% { opacity: 1; transform: scale(1.25); }
+        45% { opacity: 0.25; transform: scale(0.9); }
+      }
+      @keyframes barWave {
+        0%, 100% { opacity: 0.2; }
+        20% { opacity: 0.95; }
+        45% { opacity: 0.2; }
+      }
+      .g1 { animation: gateBeacon 4s ease-in-out 0s infinite; transform-box: fill-box; transform-origin: center; }
+      .g2 { animation: gateBeacon 4s ease-in-out 0.7s infinite; transform-box: fill-box; transform-origin: center; }
+      .g3 { animation: gateBeacon 4s ease-in-out 1.4s infinite; transform-box: fill-box; transform-origin: center; }
+      .g4 { animation: gateBeacon 4s ease-in-out 2.1s infinite; transform-box: fill-box; transform-origin: center; }
+      .g5 { animation: gateBeacon 4s ease-in-out 2.8s infinite; transform-box: fill-box; transform-origin: center; }
+      .b1 { animation: barWave 4s ease-in-out 0s infinite; }
+      .b2 { animation: barWave 4s ease-in-out 0.7s infinite; }
+      .b3 { animation: barWave 4s ease-in-out 1.4s infinite; }
+      .b4 { animation: barWave 4s ease-in-out 2.1s infinite; }
+      .b5 { animation: barWave 4s ease-in-out 2.8s infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .g1, .g2, .g3, .g4, .g5, .b1, .b2, .b3, .b4, .b5 { animation: none; opacity: 0.85; }
+      }
+    </style>
+  </defs>
+
+  <rect x="4" y="4" width="1192" height="198" rx="18" fill="#f3ede2" stroke="#0f181c" stroke-opacity="0.18" stroke-width="1.5"/>
+  <text x="28" y="30" class="mono" font-size="11" font-weight="700" letter-spacing="1.4" fill="#c84b11">FIVE ENGINEERING PILLARS · ZERO PLUGIN ARCHITECTURE</text>
+  <text x="1172" y="30" text-anchor="end" class="mono" font-size="11" fill="#0f181c" fill-opacity="0.58">KATALON 11+ · ALLURE 2.35.4</text>
+
+  <!-- Pillar 1 -->
+  <g transform="translate(24, 44)">
+    <rect width="216" height="138" rx="13" fill="#faf6ee" stroke="#0f181c" stroke-opacity="0.18"/>
+    <rect x="16" y="4" width="184" height="2.5" rx="1.25" fill="#c84b11" class="b1"/>
+    <rect x="16" y="16" width="76" height="20" rx="5" fill="#c84b11"/>
+    <text x="54" y="30" text-anchor="middle" class="mono" font-size="10.5" font-weight="700" fill="#ffffff">01 · API</text>
+    <circle cx="192" cy="26" r="4" fill="#c84b11" class="g1"/>
+    <text x="16" y="64" class="sans" font-size="18" font-weight="700" fill="#0f181c">Zero Plugin</text>
+    <text x="16" y="88" class="sans" font-size="12.5" fill="#2c3a40">Uses Katalon's public Test</text>
+    <text x="16" y="106" class="sans" font-size="12.5" fill="#2c3a40">Listener API cleanly. No</text>
+    <text x="16" y="124" class="sans" font-size="12.5" fill="#2c3a40">OSGi bundle required.</text>
+  </g>
+
+  <!-- Pillar 2 -->
+  <g transform="translate(258, 44)">
+    <rect width="216" height="138" rx="13" fill="#faf6ee" stroke="#0f181c" stroke-opacity="0.18"/>
+    <rect x="16" y="4" width="184" height="2.5" rx="1.25" fill="#147548" class="b2"/>
+    <rect x="16" y="16" width="76" height="20" rx="5" fill="#147548"/>
+    <text x="54" y="30" text-anchor="middle" class="mono" font-size="10.5" font-weight="700" fill="#ffffff">02 · JARS</text>
+    <circle cx="192" cy="26" r="4" fill="#147548" class="g2"/>
+    <text x="16" y="64" class="sans" font-size="18" font-weight="700" fill="#0f181c">Zero Clash</text>
+    <text x="16" y="88" class="sans" font-size="12.5" fill="#2c3a40">Only 2 jars with shaded</text>
+    <text x="16" y="106" class="sans" font-size="12.5" fill="#2c3a40">Jackson — zero classpath</text>
+    <text x="16" y="124" class="sans" font-size="12.5" fill="#2c3a40">conflicts with Katalon.</text>
+  </g>
+
+  <!-- Pillar 3 -->
+  <g transform="translate(492, 44)">
+    <rect width="216" height="138" rx="13" fill="#faf6ee" stroke="#0f181c" stroke-opacity="0.18"/>
+    <rect x="16" y="4" width="184" height="2.5" rx="1.25" fill="#9c6500" class="b3"/>
+    <rect x="16" y="16" width="84" height="20" rx="5" fill="#9c6500"/>
+    <text x="58" y="30" text-anchor="middle" class="mono" font-size="10.5" font-weight="700" fill="#ffffff">03 · SUITES</text>
+    <circle cx="192" cy="26" r="4" fill="#9c6500" class="g3"/>
+    <text x="16" y="64" class="sans" font-size="18" font-weight="700" fill="#0f181c">Trend History</text>
+    <text x="16" y="88" class="sans" font-size="12.5" fill="#2c3a40">Merges multi-suite</text>
+    <text x="16" y="106" class="sans" font-size="12.5" fill="#2c3a40">Collections accurately &amp;</text>
+    <text x="16" y="124" class="sans" font-size="12.5" fill="#2c3a40">carries forward trends.</text>
+  </g>
+
+  <!-- Pillar 4 -->
+  <g transform="translate(726, 44)">
+    <rect width="216" height="138" rx="13" fill="#faf6ee" stroke="#0f181c" stroke-opacity="0.18"/>
+    <rect x="16" y="4" width="184" height="2.5" rx="1.25" fill="#1b6b3a" class="b4"/>
+    <rect x="16" y="16" width="80" height="20" rx="5" fill="#1b6b3a"/>
+    <text x="56" y="30" text-anchor="middle" class="mono" font-size="10.5" font-weight="700" fill="#ffffff">04 · PROOF</text>
+    <circle cx="192" cy="26" r="4" fill="#1b6b3a" class="g4"/>
+    <text x="16" y="64" class="sans" font-size="18" font-weight="700" fill="#0f181c">Auto Evidence</text>
+    <text x="16" y="88" class="sans" font-size="12.5" fill="#2c3a40">Nested steps, failure pics,</text>
+    <text x="16" y="106" class="sans" font-size="12.5" fill="#2c3a40">DOM/XML &amp; masked .har</text>
+    <text x="16" y="124" class="sans" font-size="12.5" fill="#2c3a40">API logs automatically.</text>
+  </g>
+
+  <!-- Pillar 5 -->
+  <g transform="translate(960, 44)">
+    <rect width="216" height="138" rx="13" fill="#0f181c"/>
+    <rect x="16" y="4" width="184" height="2.5" rx="1.25" fill="#ff7b3b" class="b5"/>
+    <rect x="16" y="16" width="76" height="20" rx="5" fill="#ff7b3b"/>
+    <text x="54" y="30" text-anchor="middle" class="mono" font-size="10.5" font-weight="700" fill="#0f181c">05 · RERUN</text>
+    <circle cx="192" cy="26" r="4" fill="#ff7b3b" class="g5"/>
+    <text x="16" y="64" class="sans" font-size="18" font-weight="700" fill="#ece6da">TestOps &amp; CI</text>
+    <text x="16" y="88" class="sans" font-size="12.5" fill="#c7c2b6">Selective TestOps reruns</text>
+    <text x="16" y="106" class="sans" font-size="12.5" fill="#c7c2b6">&amp; verified YAML pipelines</text>
+    <text x="16" y="124" class="sans" font-size="12.5" fill="#c7c2b6">on every major CI host.</text>
+  </g>
+</svg>

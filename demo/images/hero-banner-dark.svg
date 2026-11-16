@@ -1,0 +1,190 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" width="1200" height="440" role="img" aria-label="Allure-Katalon Bridge — Zero-touch Allure reporting for Katalon Studio">
+  <defs>
+    <linearGradient id="bg-dark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1215"/>
+      <stop offset="55%" stop-color="#0f181c"/>
+      <stop offset="100%" stop-color="#142126"/>
+    </linearGradient>
+    <radialGradient id="glow-orange" cx="0.2" cy="0.3" r="0.55">
+      <stop offset="0%" stop-color="#ff7b3b" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#ff7b3b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow-mint" cx="0.82" cy="0.65" r="0.46">
+      <stop offset="0%" stop-color="#3dd98f" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#3dd98f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="beam-halo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ff7b3b" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#ff7b3b" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#3dd98f" stop-opacity="0.72"/>
+    </linearGradient>
+    <linearGradient id="beam-core" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ff7b3b" stop-opacity="0"/>
+      <stop offset="20%" stop-color="#ff7b3b" stop-opacity="1"/>
+      <stop offset="80%" stop-color="#3dd98f" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#3dd98f" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bridge-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff7b3b"/>
+      <stop offset="100%" stop-color="#3dd98f"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#ece6da" stroke-opacity="0.045" stroke-width="1"/>
+    </pattern>
+    <clipPath id="card-clip">
+      <rect x="4" y="4" width="1192" height="432" rx="22"/>
+    </clipPath>
+    <clipPath id="panel-clip">
+      <rect x="636" y="42" width="516" height="356" rx="16"/>
+    </clipPath>
+    <style>
+      .sans { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+      .serif { font-family: Georgia, 'Times New Roman', serif; font-style: italic; }
+      .mono { font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace; }
+      @keyframes pulseDot {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.45; transform: scale(0.8); }
+      }
+      @keyframes pulseRing {
+        0% { opacity: 0.7; transform: scale(1); }
+        100% { opacity: 0; transform: scale(2.4); }
+      }
+      @keyframes spinCW {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes spinCCW {
+        from { transform: rotate(360deg); }
+        to { transform: rotate(0deg); }
+      }
+      @keyframes scanSweep {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(205px); }
+      }
+      @keyframes blinkCursor {
+        0%, 49% { opacity: 1; }
+        50%, 100% { opacity: 0; }
+      }
+      @keyframes reportPulse {
+        0%, 100% { stroke-opacity: 0.48; }
+        50% { stroke-opacity: 0.95; }
+      }
+      @keyframes sealGlow {
+        0%, 100% { filter: drop-shadow(0 0 0px rgba(61,217,143,0)); }
+        50% { filter: drop-shadow(0 0 10px rgba(61,217,143,0.45)); }
+      }
+      .pulse { animation: pulseDot 2.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+      .ring { animation: pulseRing 2.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+      .orbit-cw { animation: spinCW 38s linear infinite; transform-origin: 900px 220px; }
+      .orbit-ccw { animation: spinCCW 54s linear infinite; transform-origin: 900px 220px; }
+      .scan { animation: scanSweep 4.6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; }
+      .cursor { animation: blinkCursor 1.05s steps(1) infinite; }
+      .report-box { animation: reportPulse 2.8s ease-in-out infinite; }
+      .stamp-seal { animation: sealGlow 3s ease-in-out infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .pulse, .ring, .orbit-cw, .orbit-ccw, .scan, .cursor, .report-box, .stamp-seal { animation: none; }
+      }
+    </style>
+  </defs>
+
+  <g clip-path="url(#card-clip)">
+    <rect x="4" y="4" width="1192" height="432" rx="22" fill="url(#bg-dark)"/>
+    <rect x="4" y="4" width="1192" height="432" rx="22" fill="url(#grid)"/>
+    <rect x="4" y="4" width="1192" height="432" rx="22" fill="url(#glow-orange)"/>
+    <rect x="4" y="4" width="1192" height="432" rx="22" fill="url(#glow-mint)"/>
+
+    <circle cx="900" cy="220" r="260" fill="none" stroke="#ff7b3b" stroke-opacity="0.1" stroke-width="1.2" stroke-dasharray="6 10" class="orbit-cw"/>
+    <circle cx="900" cy="220" r="200" fill="none" stroke="#3dd98f" stroke-opacity="0.1" stroke-width="1" stroke-dasharray="3 9" class="orbit-ccw"/>
+
+    <!-- Top/bottom alignment dots -->
+    <g fill="#ece6da" fill-opacity="0.16">
+      <circle cx="48" cy="22" r="1.5"/><circle cx="72" cy="22" r="1.5"/><circle cx="96" cy="22" r="1.5"/>
+      <circle cx="120" cy="22" r="1.5"/><circle cx="144" cy="22" r="1.5"/><circle cx="168" cy="22" r="1.5"/>
+      <circle cx="1032" cy="418" r="1.5"/><circle cx="1056" cy="418" r="1.5"/><circle cx="1080" cy="418" r="1.5"/>
+      <circle cx="1104" cy="418" r="1.5"/><circle cx="1128" cy="418" r="1.5"/><circle cx="1152" cy="418" r="1.5"/>
+    </g>
+
+    <!-- LEFT COLUMN -->
+    <rect x="52" y="48" width="372" height="30" rx="15" fill="#172429" stroke="#ff7b3b" stroke-opacity="0.4" stroke-width="1"/>
+    <circle cx="71" cy="63" r="4.5" fill="none" stroke="#ff7b3b" stroke-width="1.5" class="ring"/>
+    <circle cx="71" cy="63" r="4.5" fill="#ff7b3b" class="pulse"/>
+    <text x="86" y="67" class="mono" font-size="11" font-weight="600" letter-spacing="1.2" fill="#ffc857">ZERO-TOUCH BRIDGE · KATALON TO ALLURE 2</text>
+
+    <!-- Custom Bridge Emblem + Title -->
+    <g transform="translate(52, 102)">
+      <rect width="52" height="52" rx="12" fill="#091012" stroke="url(#bridge-grad)" stroke-width="1.6"/>
+      <path d="M13 33 C13 20, 39 20, 39 33" fill="none" stroke="url(#bridge-grad)" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="13" cy="34" r="3.2" fill="#ff7b3b"/>
+      <circle cx="39" cy="34" r="3.2" fill="#3dd98f"/>
+      <path d="M26 14 L26 22" stroke="#ffc857" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
+
+    <text x="118" y="142" class="sans" font-size="42" font-weight="700" letter-spacing="-1.3" fill="#ece6da">Allure-Katalon Bridge</text>
+    <text x="52" y="194" class="serif" font-size="31" fill="#ffc857">zero-plugin reporting across every run</text>
+
+    <text x="52" y="244" class="sans" font-size="16.5" fill="#d3cdc0">Turn any Katalon Studio project into an Allure-reporting suite in one step —</text>
+    <text x="52" y="269" class="sans" font-size="16.5" fill="#d3cdc0">no plugins, no OSGi jars, and zero edits to existing Test Cases.</text>
+
+    <!-- Spec pills -->
+    <g transform="translate(52, 314)">
+      <rect x="0" y="0" width="164" height="34" rx="8" fill="#162328" stroke="#ece6da" stroke-opacity="0.16"/>
+      <text x="82" y="21" text-anchor="middle" class="mono" font-size="11.5" font-weight="600" fill="#ece6da">WIN · MAC · LINUX</text>
+
+      <rect x="176" y="0" width="166" height="34" rx="8" fill="#162328" stroke="#ece6da" stroke-opacity="0.16"/>
+      <text x="259" y="21" text-anchor="middle" class="mono" font-size="11.5" font-weight="600" fill="#ece6da">NPX OR 1 CLICK</text>
+
+      <rect x="354" y="0" width="194" height="34" rx="8" fill="#162328" stroke="#ece6da" stroke-opacity="0.16"/>
+      <text x="451" y="21" text-anchor="middle" class="mono" font-size="11.5" font-weight="600" fill="#ece6da">TESTOPS + CI READY</text>
+    </g>
+
+    <text x="52" y="394" class="mono" font-size="11.5" letter-spacing="1.6" fill="#ece6da" fill-opacity="0.34">KATALON@11.4 &gt;&gt;&gt; @AfterTestSuite &gt;&gt;&gt; ALLURE-REPORT/*.HTML</text>
+
+    <!-- RIGHT COLUMN: Live Pipeline Telemetry Panel -->
+    <g clip-path="url(#panel-clip)">
+      <rect x="636" y="42" width="516" height="356" rx="16" fill="#081013" stroke="#ece6da" stroke-opacity="0.2" stroke-width="1.2"/>
+
+      <rect x="636" y="42" width="516" height="40" fill="#111d22"/>
+      <line x1="636" y1="82" x2="1152" y2="82" stroke="#ece6da" stroke-opacity="0.12"/>
+      <circle cx="660" cy="62" r="4.5" fill="#f2665a" fill-opacity="0.85"/>
+      <circle cx="676" cy="62" r="4.5" fill="#ffc857" fill-opacity="0.85"/>
+      <circle cx="692" cy="62" r="4.5" fill="#3dd98f" fill-opacity="0.85"/>
+      <text x="714" y="66" class="mono" font-size="11.5" fill="#b8b2a6">BRIDGE PIPELINE · kzissues.tsc</text>
+      <rect x="942" y="55" width="7" height="13" rx="1" fill="#3dd98f" class="cursor"/>
+
+      <!-- Source box -->
+      <text x="660" y="110" class="mono" font-size="10.5" font-weight="700" letter-spacing="1.2" fill="#ff7b3b">KATALON PUBLIC LISTENER HOOK</text>
+      <rect x="660" y="120" width="468" height="58" rx="10" fill="#101a1e" stroke="#ece6da" stroke-opacity="0.12"/>
+      <text x="678" y="145" class="mono" font-size="12.5" fill="#ece6da">@BeforeTestSuite → @AfterTestCase → .har</text>
+      <text x="678" y="165" class="sans" font-size="13" fill="#a8b4b8">Zero test edits · Shaded Jackson avoids classpath clashes</text>
+
+      <!-- Mid pill -->
+      <rect x="660" y="194" width="332" height="24" rx="6" fill="#1a262b" stroke="#ff7b3b" stroke-opacity="0.45"/>
+      <text x="672" y="210" class="mono" font-size="10.5" font-weight="700" fill="#ffc857">▼ SINGLE-FILE --single-file BUNDLE + HISTORY</text>
+
+      <!-- Generated Report Box -->
+      <text x="660" y="242" class="mono" font-size="10.5" font-weight="700" letter-spacing="1.2" fill="#3dd98f">GENERATED HTML + EVIDENCE ATTACHMENTS</text>
+      <rect x="660" y="252" width="468" height="82" rx="10" fill="#0d211b" stroke="#3dd98f" stroke-width="1.3" class="report-box"/>
+      <!-- Stacked mini chart bar inside panel -->
+      <rect x="678" y="268" width="260" height="8" rx="4" fill="#3dd98f"/>
+      <rect x="942" y="268" width="54" height="8" rx="4" fill="#ffc857"/>
+      <rect x="1000" y="268" width="26" height="8" rx="4" fill="#f2665a"/>
+      <text x="678" y="298" class="mono" font-size="12.5" font-weight="600" fill="#ece6da">allure-report/kzissues_2026-11-16.html</text>
+      <text x="678" y="318" class="sans" font-size="12.5" fill="#8fd1a6">Steps · Screenshots · Masked HTTP · Trend history</text>
+
+      <!-- Animated phosphor beam -->
+      <g class="scan">
+        <rect x="652" y="96" width="484" height="22" fill="url(#beam-halo)"/>
+        <rect x="652" y="117" width="484" height="2.2" fill="url(#beam-core)"/>
+      </g>
+
+      <text x="660" y="366" class="mono" font-size="11.5" fill="#ffc857">DOUBLE-CLICK READY · NO SERVER REQUIRED</text>
+      <g transform="translate(968, 326) rotate(-6)" class="stamp-seal">
+        <rect x="0" y="0" width="156" height="44" rx="7" fill="#0c261c" fill-opacity="0.95" stroke="#3dd98f" stroke-width="2.2"/>
+        <rect x="4" y="4" width="148" height="36" rx="4" fill="none" stroke="#3dd98f" stroke-opacity="0.6" stroke-width="1"/>
+        <text x="78" y="27" text-anchor="middle" class="mono" font-size="13.5" font-weight="700" letter-spacing="1.2" fill="#3dd98f">REPORT READY</text>
+      </g>
+    </g>
+
+    <rect x="4.75" y="4.75" width="1190.5" height="430.5" rx="21.25" fill="none" stroke="#ece6da" stroke-opacity="0.16" stroke-width="1.5"/>
+  </g>
+</svg>
