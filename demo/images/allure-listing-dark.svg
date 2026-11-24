@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 120" width="720" height="120" role="img" aria-label="Listed by Allure Report on allurereport.org - Katalon Studio integration">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1215"/>
+      <stop offset="100%" stop-color="#142126"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.1" cy="0.5" r="0.45">
+      <stop offset="0%" stop-color="#3dd98f" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#3dd98f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3dd98f"/>
+      <stop offset="100%" stop-color="#ff7b3b"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.09"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="clip">
+      <rect x="2" y="2" width="716" height="116" rx="20"/>
+    </clipPath>
+    <style>
+      .sans { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+      .sweep { animation: sweep 6s ease-in-out infinite; }
+      @keyframes sweep { 0%, 50% { transform: translateX(-280px); } 100% { transform: translateX(900px); } }
+      .halo { transform-origin: 68px 60px; animation: halo 3s ease-in-out infinite; }
+      @keyframes halo { 0%, 100% { opacity: 0.25; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.08); } }
+      @media (prefers-reduced-motion: reduce) { .sweep, .halo { animation: none; } }
+    </style>
+  </defs>
+
+  <g clip-path="url(#clip)">
+    <rect width="720" height="120" fill="url(#bg)"/>
+    <rect width="720" height="120" fill="url(#glow)"/>
+    <g class="sweep"><rect x="0" y="-30" width="180" height="180" fill="url(#shine)" transform="skewX(-20)"/></g>
+  </g>
+  <rect x="2" y="2" width="716" height="116" rx="20" fill="none" stroke="url(#edge)" stroke-width="2.5"/>
+
+  <!-- status ring with a check -->
+  <circle class="halo" cx="68" cy="60" r="40" fill="none" stroke="#3dd98f" stroke-width="2"/>
+  <circle cx="68" cy="60" r="30" fill="none" stroke="#ece6da" stroke-opacity="0.08" stroke-width="10"/>
+  <circle cx="68" cy="60" r="30" fill="none" stroke="#3dd98f" stroke-width="10" stroke-dasharray="151 189" transform="rotate(-90 68 60)"/>
+  <circle cx="68" cy="60" r="30" fill="none" stroke="#f2665a" stroke-width="10" stroke-dasharray="25 189" stroke-dashoffset="-153" transform="rotate(-90 68 60)"/>
+  <circle cx="68" cy="60" r="30" fill="none" stroke="#ffc857" stroke-width="10" stroke-dasharray="7 189" stroke-dashoffset="-180" transform="rotate(-90 68 60)"/>
+  <path d="M55 61 L64 70 L82 51" fill="none" stroke="#3dd98f" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="124" y="42" class="sans" font-size="14" font-weight="700" letter-spacing="2.4" fill="#3dd98f">LISTED BY ALLURE REPORT</text>
+  <text x="124" y="76" class="sans" font-size="29" font-weight="800" fill="#ece6da">allurereport.org<tspan fill="#ff7b3b">/modules</tspan></text>
+  <text x="124" y="100" class="sans" font-size="15" fill="#a8b4b8">Katalon Studio · Allure 2 integration</text>
+
+  <g transform="translate(566 40)">
+    <rect width="128" height="40" rx="20" fill="#ff7b3b" fill-opacity="0.12" stroke="#ff7b3b" stroke-opacity="0.65" stroke-width="1.5"/>
+    <text x="64" y="26" text-anchor="middle" class="sans" font-size="16" font-weight="700" fill="#ff7b3b">View listing ↗</text>
+  </g>
+</svg>

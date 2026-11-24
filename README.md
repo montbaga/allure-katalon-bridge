@@ -17,6 +17,16 @@
 
 <br>
 
+<a href="https://allurereport.org/modules/?category=Test+Framework">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/images/allure-listing-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/images/allure-listing-light.svg">
+  <img src="demo/images/allure-listing-dark.svg" alt="Listed by Allure Report on allurereport.org" width="520">
+</picture>
+</a>
+
+<br><br>
+
 <a href="https://www.npmjs.com/package/allure-katalon-bridge"><img alt="npm version" src="https://img.shields.io/npm/v/allure-katalon-bridge.svg?color=ff7b3b&labelColor=0f181c"></a>
 <a href="https://github.com/montbaga/allure-katalon-bridge/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/montbaga/allure-katalon-bridge/ci.yml?branch=main&label=CI&labelColor=0f181c"></a>
 <a href="LICENSE.md"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-3dd98f?labelColor=0f181c"></a>
